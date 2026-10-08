@@ -1,0 +1,20 @@
+<Project>
+
+  <!-- Modules (one project each). One name everywhere: folder = project =
+       assembly = root namespace = map entry (App.Host alone renames its exe, in its own file).
+       Every public member needs a /// doc-comment or the build fails (CS1591 as error): with no
+       Core.Contracts project, a module's public surface IS its contract, so the behavioral
+       notes are compiler-forced here (no separate contracts project). -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>$(MSBuildProjectName)</RootNamespace>
+    <AssemblyName>$(MSBuildProjectName)</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <WarningsAsErrors>$(WarningsAsErrors);CS1591</WarningsAsErrors>
+  </PropertyGroup>
+
+</Project>

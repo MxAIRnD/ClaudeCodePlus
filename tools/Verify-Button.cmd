@@ -1,0 +1,5 @@
+@echo off
+rem Start this file with:  explorer.exe "<repo>\tools\Verify-Button.cmd"
+rem An unpackaged READ of the real Startup folder: reports whether the shortcut exists, where it
+rem points, and whether the button process is running. Output goes to tools\_verify.log next to this file.
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$l = Join-Path ([Environment]::GetFolderPath('Startup')) 'Claude Code Plus button.lnk'; if (Test-Path -LiteralPath $l) { $i = Get-Item -LiteralPath $l; $s = (New-Object -ComObject WScript.Shell).CreateShortcut($l); 'FOUND ' + $i.FullName + ' (' + $i.Length + ' bytes, ' + $i.LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss') + ') target ' + $s.TargetPath + ' ' + $s.Arguments + ' exists=' + (Test-Path -LiteralPath $s.TargetPath) } else { 'MISSING ' + $l }; $b = @(Get-Process -Name ClaudeCodePlus -ErrorAction Ignore); 'RUNNING ClaudeCodePlus processes: ' + $b.Count + ' ' + (($b | ForEach-Object { [string]$_.Id + '=' + $_.Path }) -join '; ')" > "%~dp0_verify.log" 2>&1

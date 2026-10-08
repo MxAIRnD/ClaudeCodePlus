@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Keep in sync with the allowed-edges table: every module is referenced here so its assembly can
+       be loaded and checked. App.Host is the exe and is not loaded. -->
+  <PropertyGroup>
+    <UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NetArchTest.Rules" Version="1.3.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Feature.Catalog\Feature.Catalog.csproj" />
+    <ProjectReference Include="..\..\src\Feature.ChipButton\Feature.ChipButton.csproj" />
+    <ProjectReference Include="..\..\src\Feature.DeepLink\Feature.DeepLink.csproj" />
+    <ProjectReference Include="..\..\src\Feature.Picker\Feature.Picker.csproj" />
+    <ProjectReference Include="..\..\src\Core.Infrastructure\Core.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

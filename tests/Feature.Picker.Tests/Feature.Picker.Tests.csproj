@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The SUT is a WinForms library, so this project carries the desktop framework too. -->
+  <PropertyGroup>
+    <UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Feature.Picker\Feature.Picker.csproj" />
+  </ItemGroup>
+
+</Project>
