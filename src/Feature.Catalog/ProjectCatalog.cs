@@ -8,16 +8,21 @@ namespace Feature.Catalog;
 
 /// <summary>
 /// The scan behind <see cref="IProjectCatalog"/>: sightings from every enabled source, merged
-/// per folder, noise removed per <see cref="CatalogOptions"/>, ordered most recent first.
+/// per folder, noise removed per <see cref="CatalogOptions"/>, ordered most recent first. The
+/// desktop store's memo (see <see cref="DesktopSessionStore"/>) lives with this instance.
 /// </summary>
 internal sealed class ProjectCatalog : IProjectCatalog
 {
     private readonly CatalogOptions _options;
+    private readonly DesktopSessionStore? _desktop;
 
     public ProjectCatalog(CatalogOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
         _options = options;
+        _desktop = string.IsNullOrWhiteSpace(options.DesktopSessionsRoot)
+            ? null
+            : new DesktopSessionStore(options.DesktopSessionsRoot);
     }
 
     public Task<IReadOnlyList<ProjectEntry>> ListAsync(CancellationToken cancellationToken = default) =>
@@ -26,9 +31,9 @@ internal sealed class ProjectCatalog : IProjectCatalog
     private IReadOnlyList<ProjectEntry> Scan(CancellationToken cancellationToken)
     {
         var sightings = new List<Sighting>();
-        if (!string.IsNullOrWhiteSpace(_options.DesktopSessionsRoot))
+        if (_desktop is not null)
         {
-            sightings.AddRange(DesktopSessionStore.Read(_options.DesktopSessionsRoot, cancellationToken));
+            sightings.AddRange(_desktop.Read(cancellationToken));
         }
 
         if (!string.IsNullOrWhiteSpace(_options.TerminalProjectsRoot))

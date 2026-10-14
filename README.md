@@ -12,6 +12,10 @@ app's own `claude://code/new?folder=` link.
 - **Read-only.** It reads Claude's local session data (the desktop session store and
   `~\.claude\projects`) and never writes to it. It never changes, patches or injects into the
   app.
+- **Quick list.** A session record is read only as far as its folder and time, and what it
+  yielded stays in memory while the button runs: a press reads again only the records whose
+  size or write time changed. One scan runs when the button starts, so the first press is quick
+  too. Nothing is written to disk for this.
 - **How the button finds its place.** Windows UI Automation reads the foreground Claude window.
   In the newer layout (the "environments" start card) the button sits after the composer's
   environment and permissions chips ("Environment: …", "Permissions: …"); in the older one,

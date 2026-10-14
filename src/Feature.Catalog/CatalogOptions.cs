@@ -9,7 +9,10 @@ public sealed class CatalogOptions
     /// <summary>
     /// Root of the desktop app's session store, normally
     /// <c>%APPDATA%\Claude\claude-code-sessions</c>; searched recursively for
-    /// <c>local_*.json</c>. Null, or a folder that does not exist: the source contributes nothing.
+    /// <c>local_*.json</c>. A record is read only as far as its <c>originCwd</c> and
+    /// <c>lastActivityAt</c> (a record cut off after them still counts), and read again only
+    /// when its size or last write time changed. Null, or a folder that does not exist: the
+    /// source contributes nothing.
     /// </summary>
     public string? DesktopSessionsRoot { get; init; }
 

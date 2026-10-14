@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Feature.Catalog;
@@ -9,7 +10,10 @@ using Xunit;
 
 namespace Feature.Catalog.Tests;
 
-/// <summary>IProjectCatalog.ListAsync: what the desktop source reads, what it skips, how it fails; the terminal root switch.</summary>
+/// <summary>
+/// IProjectCatalog.ListAsync: what the desktop source reads, what it skips, how it fails; the
+/// terminal root switch; the streaming read and the memo of unchanged records.
+/// </summary>
 public sealed class SourceInputTests
 {
     private const long T = 1791446823792;
@@ -163,5 +167,96 @@ public sealed class SourceInputTests
 
         Assert.Equal(before, File.GetLastWriteTimeUtc(file));
         Assert.Equal(filesBefore, Directory.GetFiles(fx.SessionsRoot, "*", SearchOption.AllDirectories));
+    }
+
+    // --- the streaming read: a record counts once its folder and time are known ---
+
+    [Fact]
+    public async Task A_record_cut_off_after_its_folder_and_time_is_still_listed()
+    {
+        var fx = CatalogFixture.Create();
+        string cut = fx.ExistingFolder("Cut");
+        fx.WriteRaw("{\"sessionId\":\"local_cut\",\"originCwd\":" + JsonSerializer.Serialize(cut)
+            + ",\"lastActivityAt\":" + T + ",\"title\":\"made up");
+
+        IReadOnlyList<ProjectEntry> list = await CatalogFixture.ListAsync(fx.Options());
+
+        ProjectEntry entry = Assert.Single(list);
+        Assert.Equal(cut, entry.Path);
+        Assert.Equal(CatalogFixture.Ms(T), entry.LastActivity);
+    }
+
+    // --- the memo: a record is read again only when its size or write time changed ---
+
+    [Fact]
+    public async Task A_record_rewritten_in_place_is_read_again_on_the_next_list()
+    {
+        var fx = CatalogFixture.Create();
+        string folder = fx.ExistingFolder("Rewritten");
+        IProjectCatalog catalog = CatalogFixture.Catalog(fx.Options());
+        fx.WriteJson(new { sessionId = "local_same", originCwd = folder, lastActivityAt = T - 1_000, title = "v1" }, fileName: "local_same.json");
+
+        IReadOnlyList<ProjectEntry> before = await catalog.ListAsync();
+        // A longer title changes the size as well, so the test does not rest on the clock's resolution.
+        fx.WriteJson(new { sessionId = "local_same", originCwd = folder, lastActivityAt = T, title = "v2, longer" }, fileName: "local_same.json");
+        IReadOnlyList<ProjectEntry> after = await catalog.ListAsync();
+
+        Assert.Equal(CatalogFixture.Ms(T - 1_000), Assert.Single(before).LastActivity);
+        Assert.Equal(CatalogFixture.Ms(T), Assert.Single(after).LastActivity);
+    }
+
+    [Fact]
+    public async Task An_unchanged_record_is_listed_from_memory_even_while_another_process_holds_it()
+    {
+        var fx = CatalogFixture.Create();
+        string folder = fx.ExistingFolder("Held");
+        string file = fx.WriteRecord(folder, T);
+        IProjectCatalog catalog = CatalogFixture.Catalog(fx.Options());
+
+        IReadOnlyList<ProjectEntry> before = await catalog.ListAsync();
+        IReadOnlyList<ProjectEntry> during;
+        using (new FileStream(file, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            during = await catalog.ListAsync();
+        }
+
+        Assert.Equal(folder, Assert.Single(before).Path);
+        Assert.Equal(folder, Assert.Single(during).Path);
+    }
+
+    [Fact]
+    public async Task A_record_that_could_not_be_opened_is_read_once_it_can_be()
+    {
+        var fx = CatalogFixture.Create();
+        string folder = fx.ExistingFolder("Locked");
+        string file = fx.WriteRecord(folder, T);
+        IProjectCatalog catalog = CatalogFixture.Catalog(fx.Options());
+
+        IReadOnlyList<ProjectEntry> during;
+        using (new FileStream(file, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            during = await catalog.ListAsync();
+        }
+
+        IReadOnlyList<ProjectEntry> after = await catalog.ListAsync();
+
+        Assert.Empty(during);
+        Assert.Equal(folder, Assert.Single(after).Path);
+    }
+
+    [Fact]
+    public async Task A_record_renamed_away_from_the_pattern_is_dropped_on_the_next_list()
+    {
+        var fx = CatalogFixture.Create();
+        string folder = fx.ExistingFolder("Renamed");
+        string file = fx.WriteRecord(folder, T);
+        IProjectCatalog catalog = CatalogFixture.Catalog(fx.Options());
+
+        IReadOnlyList<ProjectEntry> before = await catalog.ListAsync();
+        File.Move(file, Path.Combine(Path.GetDirectoryName(file)!, "other_renamed.json"));
+        IReadOnlyList<ProjectEntry> after = await catalog.ListAsync();
+
+        Assert.Equal(folder, Assert.Single(before).Path);
+        Assert.Empty(after);
     }
 }

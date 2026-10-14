@@ -33,8 +33,9 @@ public static class LauncherComposition
     /// <summary>
     /// Runs by command line: with <see cref="ButtonSwitch"/> (any case) the resident chip-row
     /// button — one per sign-in session; a second start returns at once — whose press opens the
-    /// picker (or brings an open one to the front) and whose "Exit" ends it; otherwise exactly
-    /// <see cref="Run()"/>. Same threading rules as <see cref="Run()"/>. Throws
+    /// picker (or brings an open one to the front) and whose "Exit" ends it; it lists the
+    /// catalog once at start, in the background, so that the first press is quick too; otherwise
+    /// exactly <see cref="Run()"/>. Same threading rules as <see cref="Run()"/>. Throws
     /// <see cref="ArgumentNullException"/> for null.
     /// </summary>
     public static void Run(string[] args)
@@ -73,6 +74,9 @@ public static class LauncherComposition
         };
         button.ExitRequested += (_, _) => Application.ExitThread();
         button.StartWatching();
+
+        // Fill the catalog's memo now, in the background: the first press then lists from memory.
+        _ = provider.GetRequiredService<IProjectCatalog>().ListAsync();
         Application.Run(new ApplicationContext());
         picker?.Dispose();
     }

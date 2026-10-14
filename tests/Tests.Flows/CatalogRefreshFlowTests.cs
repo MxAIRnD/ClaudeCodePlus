@@ -10,8 +10,9 @@ using Xunit;
 namespace Tests.Flows;
 
 /// <summary>
-/// Flow "Catalog refresh": the catalog reads its sources on every
-/// call, no cache — even through the one singleton instance the composed container hands out.
+/// Flow "Catalog refresh": every call lists the sources afresh and sees what was added or
+/// changed since the previous call — even through the one singleton instance the composed
+/// container hands out, whose memo of unchanged records must not get in the way.
 /// </summary>
 public sealed class CatalogRefreshFlowTests
 {
