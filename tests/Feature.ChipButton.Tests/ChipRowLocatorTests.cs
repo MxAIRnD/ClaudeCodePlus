@@ -7,8 +7,9 @@ using Xunit;
 namespace Feature.ChipButton.Tests;
 
 /// <summary>
-/// Black-box behavior of <see cref="ChipRowLocator.FindAnchor"/> and
-/// <see cref="ChipRowLocator.ButtonBounds"/> over in-memory element snapshots.
+/// Black-box behavior of <see cref="ChipRowLocator.FindAnchor"/>,
+/// <see cref="ChipRowLocator.ButtonBounds"/> and <see cref="ChipRowLocator.Collides"/> over
+/// in-memory element snapshots.
 /// </summary>
 public sealed class ChipRowLocatorTests
 {
@@ -17,6 +18,13 @@ public sealed class ChipRowLocatorTests
     private static readonly Rectangle AddFolder = new(1313, 1340, 52, 45);
     private static readonly Rectangle Box = new(1170, 1351, 23, 23);
     private static readonly Rectangle Label = new(1198, 1345, 94, 33);
+
+    // The newer layout's composer bottom row (app build 2.37337.1), same capture rules. The
+    // environment and permissions chips joined are the anchor; the button goes right after.
+    private static readonly Rectangle EnvironmentChip = new(1012, 1493, 75, 40);
+    private static readonly Rectangle PermissionsChip = new(1092, 1493, 219, 40);
+    private static readonly Rectangle EnvironmentRow = new(1012, 1493, 299, 40);
+    private static readonly Rectangle NewButton = new(1321, 1493, 140, 40);
 
     private static ChipElement Button(string name, Rectangle bounds) => new(name, ChipElementKind.Button, bounds, false);
 
@@ -43,6 +51,29 @@ public sealed class ChipRowLocatorTests
         return row;
     }
 
+    // The new-session screen of the newer layout: the composer's attach button on the row above,
+    // the start card's buttons, and the composer's bottom row.
+    private static List<ChipElement> NewSessionComposer(Rectangle model) => new()
+    {
+        Button("Add", new Rectangle(1009, 1417, 46, 47)),
+        Button("SampleProject", new Rectangle(1368, 605, 511, 54)),
+        Button("Choose environment", new Rectangle(1368, 727, 511, 54)),
+        Button("Environment: AI", EnvironmentChip),
+        Button("Permissions: Bypass permissions", PermissionsChip),
+        Button("Model: Fable 5.1", model),
+        Button("Effort: Extra", new Rectangle(2114, 1493, 74, 40)),
+        Button("Usage: Weekly", new Rectangle(2196, 1493, 40, 40)),
+    };
+
+    private static List<ChipElement> NewSessionComposer() => NewSessionComposer(new Rectangle(2005, 1493, 103, 40));
+
+    private static List<ChipElement> WithEnvironmentChip(params ChipElement[] others)
+    {
+        List<ChipElement> elements = new() { Button("Environment: AI", EnvironmentChip) };
+        elements.AddRange(others);
+        return elements;
+    }
+
     // --- contract constants ---
 
     [Fact]
@@ -50,6 +81,12 @@ public sealed class ChipRowLocatorTests
     {
         Assert.Equal("Add another folder", ChipRowLocator.AddFolderName);
         Assert.Equal("worktree", ChipRowLocator.WorktreeName);
+    }
+
+    [Fact]
+    public void Environment_chip_prefix_is_the_start_of_the_apps_accessible_name()
+    {
+        Assert.Equal("Environment: ", ChipRowLocator.EnvironmentChipPrefix);
     }
 
     // --- FindAnchor: argument and empty ---
@@ -387,12 +424,348 @@ public sealed class ChipRowLocatorTests
         Assert.Equal(before, row);
     }
 
+    // --- FindAnchor: environment chip ---
+
+    [Fact]
+    public void FindAnchor_new_session_composer_is_the_environment_and_permissions_chips()
+    {
+        Assert.Equal(new Rectangle(1012, 1493, 299, 40), ChipRowLocator.FindAnchor(NewSessionComposer()));
+    }
+
+    [Fact]
+    public void FindAnchor_new_session_composer_does_not_depend_on_order()
+    {
+        List<ChipElement> elements = NewSessionComposer();
+        elements.Reverse();
+
+        Assert.Equal(EnvironmentRow, ChipRowLocator.FindAnchor(elements));
+    }
+
+    [Fact]
+    public void FindAnchor_running_session_with_the_environment_panel_is_null()
+    {
+        // A running session names its side-panel heading "Environment" (no colon) and has no
+        // environment chip in the composer.
+        List<ChipElement> elements = new()
+        {
+            Button("Environment", new Rectangle(1622, 185, 430, 44)),
+            Button("Model: Opus 5.5", new Rectangle(1304, 1493, 108, 40)),
+            Button("Effort: Extra", new Rectangle(1418, 1493, 74, 40)),
+            Button("Usage: Weekly", new Rectangle(1500, 1493, 40, 40)),
+        };
+
+        Assert.Null(ChipRowLocator.FindAnchor(elements));
+    }
+
+    [Fact]
+    public void FindAnchor_environment_chip_alone_is_its_bounds()
+    {
+        Assert.Equal(EnvironmentChip, ChipRowLocator.FindAnchor(WithEnvironmentChip()));
+    }
+
+    [Theory]
+    [InlineData("environment: ai")]
+    [InlineData("ENVIRONMENT: AI")]
+    [InlineData("eNvIrOnMeNt: AI")]
+    public void FindAnchor_environment_prefix_ignores_case(string name)
+    {
+        Assert.Equal(EnvironmentChip, ChipRowLocator.FindAnchor(new[] { Button(name, EnvironmentChip) }));
+    }
+
+    [Fact]
+    public void FindAnchor_environment_prefix_with_an_empty_environment_name_matches()
+    {
+        Assert.Equal(EnvironmentChip, ChipRowLocator.FindAnchor(new[] { Button("Environment: ", EnvironmentChip) }));
+    }
+
+    [Theory]
+    [InlineData("Environment:AI")]
+    [InlineData("Environment:")]
+    [InlineData("Environment")]
+    [InlineData("Environment AI")]
+    [InlineData(" Environment: AI")]
+    [InlineData("Env: AI")]
+    [InlineData("Choose environment")]
+    [InlineData("")]
+    public void FindAnchor_environment_name_must_start_with_the_full_prefix(string name)
+    {
+        Assert.Null(ChipRowLocator.FindAnchor(new[] { Button(name, EnvironmentChip) }));
+    }
+
+    [Theory]
+    [InlineData(ChipElementKind.Text)]
+    [InlineData(ChipElementKind.CheckBox)]
+    [InlineData(ChipElementKind.Other)]
+    public void FindAnchor_environment_name_on_a_non_button_is_ignored(ChipElementKind kind)
+    {
+        Assert.Null(ChipRowLocator.FindAnchor(new[] { new ChipElement("Environment: AI", kind, EnvironmentChip, false) }));
+    }
+
+    [Fact]
+    public void FindAnchor_offscreen_environment_chip_is_ignored()
+    {
+        Rectangle? anchor = ChipRowLocator.FindAnchor(new[]
+        {
+            new ChipElement("Environment: AI", ChipElementKind.Button, EnvironmentChip, true),
+            Button("Permissions: Bypass permissions", PermissionsChip),
+        });
+
+        Assert.Null(anchor);
+    }
+
+    [Theory]
+    [InlineData(0, 0, 0, 0)]
+    [InlineData(1012, 1493, 0, 40)]
+    [InlineData(1012, 1493, 75, 0)]
+    public void FindAnchor_environment_chip_with_empty_bounds_is_ignored(int x, int y, int width, int height)
+    {
+        Rectangle? anchor = ChipRowLocator.FindAnchor(new[]
+        {
+            Button("Environment: AI", new Rectangle(x, y, width, height)),
+            Button("Permissions: Bypass permissions", PermissionsChip),
+        });
+
+        Assert.Null(anchor);
+    }
+
+    [Fact]
+    public void FindAnchor_several_environment_chips_gives_the_lowest_in_any_order()
+    {
+        Rectangle upper = new(1012, 400, 75, 40);
+        Rectangle middle = new(1012, 900, 75, 40);
+        ChipElement[] chips =
+        {
+            Button("Environment: A", upper),
+            Button("Environment: B", EnvironmentChip),
+            Button("Environment: C", middle),
+        };
+
+        Assert.Equal(EnvironmentChip, ChipRowLocator.FindAnchor(chips));
+        Assert.Equal(EnvironmentChip, ChipRowLocator.FindAnchor(new[] { chips[2], chips[1], chips[0] }));
+        Assert.Equal(EnvironmentChip, ChipRowLocator.FindAnchor(new[] { chips[1], chips[0], chips[2] }));
+    }
+
+    [Fact]
+    public void FindAnchor_offscreen_lower_environment_chip_does_not_win()
+    {
+        Rectangle hiddenLower = new(1012, 1900, 75, 40);
+
+        Rectangle? anchor = ChipRowLocator.FindAnchor(new[]
+        {
+            Button("Environment: AI", EnvironmentChip),
+            new ChipElement("Environment: AI", ChipElementKind.Button, hiddenLower, true),
+        });
+
+        Assert.Equal(EnvironmentChip, anchor);
+    }
+
+    [Fact]
+    public void FindAnchor_does_not_change_the_input_in_the_newer_layout()
+    {
+        List<ChipElement> elements = NewSessionComposer();
+        ChipElement[] before = elements.ToArray();
+
+        ChipRowLocator.FindAnchor(elements);
+
+        Assert.Equal(before, elements);
+    }
+
+    // --- FindAnchor: environment row join ---
+
+    [Fact]
+    public void FindAnchor_neighbour_one_chip_height_after_the_row_is_joined()
+    {
+        // Chip ends at 1087, height 40: a neighbour starting at 1127 is exactly 40 later.
+        Rectangle neighbour = new(1127, 1493, 50, 40);
+
+        Assert.Equal(new Rectangle(1012, 1493, 165, 40), ChipRowLocator.FindAnchor(WithEnvironmentChip(Button("Next", neighbour))));
+    }
+
+    [Fact]
+    public void FindAnchor_neighbour_one_pixel_further_is_not_joined()
+    {
+        Rectangle neighbour = new(1128, 1493, 50, 40);
+
+        Assert.Equal(EnvironmentChip, ChipRowLocator.FindAnchor(WithEnvironmentChip(Button("Next", neighbour))));
+    }
+
+    [Fact]
+    public void FindAnchor_neighbour_touching_the_row_is_joined()
+    {
+        Rectangle neighbour = new(1087, 1493, 50, 40);
+
+        Assert.Equal(new Rectangle(1012, 1493, 125, 40), ChipRowLocator.FindAnchor(WithEnvironmentChip(Button("Next", neighbour))));
+    }
+
+    [Fact]
+    public void FindAnchor_chain_of_chips_each_within_the_limit_joins_all()
+    {
+        // Each starts 40 after the previous one ends; the last is 130 after the chip itself.
+        Rectangle second = new(1127, 1493, 50, 40);
+        Rectangle third = new(1217, 1493, 50, 40);
+
+        Rectangle? anchor = ChipRowLocator.FindAnchor(WithEnvironmentChip(Button("Second", second), Button("Third", third)));
+
+        Assert.Equal(new Rectangle(1012, 1493, 255, 40), anchor);
+    }
+
+    [Fact]
+    public void FindAnchor_environment_join_does_not_depend_on_order()
+    {
+        ChipElement chip = Button("Environment: AI", EnvironmentChip);
+        ChipElement second = Button("Second", new Rectangle(1127, 1493, 50, 40));
+        ChipElement third = Button("Third", new Rectangle(1217, 1493, 50, 40));
+        Rectangle expected = new(1012, 1493, 255, 40);
+
+        Assert.Equal(expected, ChipRowLocator.FindAnchor(new[] { third, second, chip }));
+        Assert.Equal(expected, ChipRowLocator.FindAnchor(new[] { second, chip, third }));
+        Assert.Equal(expected, ChipRowLocator.FindAnchor(new[] { third, chip, second }));
+    }
+
+    [Theory]
+    [InlineData(1533)]
+    [InlineData(1453)]
+    [InlineData(1600)]
+    [InlineData(1400)]
+    public void FindAnchor_neighbour_on_another_row_is_not_joined(int top)
+    {
+        // Chip centre 1513, height 40: a neighbour centred at 1553 (top 1533) is exactly 40 away.
+        Rectangle neighbour = new(1092, top, 219, 40);
+
+        Assert.Equal(EnvironmentChip, ChipRowLocator.FindAnchor(WithEnvironmentChip(Button("Next", neighbour))));
+    }
+
+    [Theory]
+    [InlineData(1532)]
+    [InlineData(1454)]
+    public void FindAnchor_neighbour_centre_closer_than_the_chip_height_is_the_same_row(int top)
+    {
+        // 39 px away from the chip centre, both directions.
+        Rectangle neighbour = new(1092, top, 219, 40);
+
+        Assert.Equal(Rectangle.Union(EnvironmentChip, neighbour), ChipRowLocator.FindAnchor(WithEnvironmentChip(Button("Next", neighbour))));
+    }
+
+    [Fact]
+    public void FindAnchor_button_left_of_the_chip_is_not_joined()
+    {
+        Rectangle leftButton = new(950, 1493, 50, 40);
+
+        Assert.Equal(EnvironmentChip, ChipRowLocator.FindAnchor(WithEnvironmentChip(Button("Before", leftButton))));
+    }
+
+    [Theory]
+    [InlineData(1080)]
+    [InlineData(1012)]
+    [InlineData(1050)]
+    public void FindAnchor_button_starting_inside_the_chip_is_not_joined(int left)
+    {
+        Rectangle overlapping = new(left, 1493, 100, 40);
+
+        Assert.Equal(EnvironmentChip, ChipRowLocator.FindAnchor(WithEnvironmentChip(Button("Overlapping", overlapping))));
+    }
+
+    [Fact]
+    public void FindAnchor_button_starting_inside_the_joined_row_is_not_joined()
+    {
+        // Starts inside the permissions chip (1092..1311) once that one is joined.
+        Rectangle overlapping = new(1300, 1493, 50, 40);
+
+        Rectangle? anchor = ChipRowLocator.FindAnchor(WithEnvironmentChip(
+            Button("Permissions: Bypass permissions", PermissionsChip),
+            Button("Overlapping", overlapping)));
+
+        Assert.Equal(EnvironmentRow, anchor);
+    }
+
+    [Fact]
+    public void FindAnchor_offscreen_neighbour_is_not_joined()
+    {
+        Rectangle? anchor = ChipRowLocator.FindAnchor(WithEnvironmentChip(
+            new ChipElement("Permissions: Bypass permissions", ChipElementKind.Button, PermissionsChip, true)));
+
+        Assert.Equal(EnvironmentChip, anchor);
+    }
+
+    [Theory]
+    [InlineData(1092, 1493, 0, 40)]
+    [InlineData(1092, 1493, 219, 0)]
+    public void FindAnchor_neighbour_with_empty_bounds_is_not_joined(int x, int y, int width, int height)
+    {
+        Rectangle? anchor = ChipRowLocator.FindAnchor(WithEnvironmentChip(
+            Button("Permissions: Bypass permissions", new Rectangle(x, y, width, height))));
+
+        Assert.Equal(EnvironmentChip, anchor);
+    }
+
+    [Theory]
+    [InlineData(ChipElementKind.Text)]
+    [InlineData(ChipElementKind.CheckBox)]
+    [InlineData(ChipElementKind.Other)]
+    public void FindAnchor_non_button_neighbour_is_not_joined(ChipElementKind kind)
+    {
+        Rectangle? anchor = ChipRowLocator.FindAnchor(WithEnvironmentChip(
+            new ChipElement("Permissions: Bypass permissions", kind, PermissionsChip, false)));
+
+        Assert.Equal(EnvironmentChip, anchor);
+    }
+
+    // --- FindAnchor: precedence over the environment chip ---
+
+    [Fact]
+    public void FindAnchor_add_folder_wins_over_the_environment_row()
+    {
+        List<ChipElement> elements = NewSessionComposer();
+        elements.Add(Button("Add another folder", AddFolder));
+
+        Assert.Equal(AddFolder, ChipRowLocator.FindAnchor(elements));
+    }
+
+    [Fact]
+    public void FindAnchor_worktree_box_wins_over_the_environment_row_in_any_order()
+    {
+        List<ChipElement> elements = NewSessionComposer();
+        elements.Add(CheckBox("worktree", Box));
+        elements.Add(Text("worktree", Label));
+
+        Assert.Equal(Rectangle.Union(Box, Label), ChipRowLocator.FindAnchor(elements));
+        elements.Reverse();
+        Assert.Equal(Rectangle.Union(Box, Label), ChipRowLocator.FindAnchor(elements));
+    }
+
+    [Fact]
+    public void FindAnchor_undrawn_add_folder_falls_back_to_the_environment_row()
+    {
+        List<ChipElement> elements = NewSessionComposer();
+        elements.Add(new ChipElement("Add another folder", ChipElementKind.Button, AddFolder, true));
+        elements.Add(Button("Add another folder", Rectangle.Empty));
+
+        Assert.Equal(EnvironmentRow, ChipRowLocator.FindAnchor(elements));
+    }
+
+    [Fact]
+    public void FindAnchor_undrawn_worktree_box_falls_back_to_the_environment_row()
+    {
+        List<ChipElement> elements = NewSessionComposer();
+        elements.Add(new ChipElement("worktree", ChipElementKind.CheckBox, Box, true));
+        elements.Add(CheckBox("worktree", Rectangle.Empty));
+        elements.Add(Text("worktree", Label));
+
+        Assert.Equal(EnvironmentRow, ChipRowLocator.FindAnchor(elements));
+    }
+
     // --- ButtonBounds ---
 
     [Fact]
     public void ButtonBounds_for_the_real_anchor()
     {
         Assert.Equal(new Rectangle(1376, 1340, 145, 45), ChipRowLocator.ButtonBounds(AddFolder, 100));
+    }
+
+    [Fact]
+    public void ButtonBounds_for_the_environment_row()
+    {
+        Assert.Equal(new Rectangle(1321, 1493, 140, 40), ChipRowLocator.ButtonBounds(EnvironmentRow, 100));
     }
 
     [Theory]
@@ -437,5 +810,113 @@ public sealed class ChipRowLocatorTests
     public void ButtonBounds_negative_text_width_throws_ArgumentOutOfRangeException(int textWidth)
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => ChipRowLocator.ButtonBounds(AddFolder, textWidth));
+    }
+
+    // --- Collides ---
+
+    [Fact]
+    public void Collides_null_throws_ArgumentNullException()
+    {
+        ArgumentNullException ex = Assert.Throws<ArgumentNullException>(() => ChipRowLocator.Collides(NewButton, EnvironmentRow, null!));
+
+        Assert.Equal("elements", ex.ParamName);
+    }
+
+    [Fact]
+    public void Collides_empty_list_is_false()
+    {
+        Assert.False(ChipRowLocator.Collides(NewButton, EnvironmentRow, Array.Empty<ChipElement>()));
+    }
+
+    [Fact]
+    public void Collides_new_session_composer_is_false()
+    {
+        Assert.False(ChipRowLocator.Collides(NewButton, EnvironmentRow, NewSessionComposer()));
+    }
+
+    [Fact]
+    public void Collides_placement_found_in_the_new_session_composer_is_free()
+    {
+        List<ChipElement> elements = NewSessionComposer();
+        Rectangle anchor = ChipRowLocator.FindAnchor(elements)!.Value;
+
+        Assert.False(ChipRowLocator.Collides(ChipRowLocator.ButtonBounds(anchor, 100), anchor, elements));
+    }
+
+    [Fact]
+    public void Collides_narrow_window_with_the_model_chip_under_the_button_is_true()
+    {
+        List<ChipElement> elements = NewSessionComposer(new Rectangle(1400, 1493, 103, 40));
+
+        Assert.True(ChipRowLocator.Collides(NewButton, EnvironmentRow, elements));
+    }
+
+    [Fact]
+    public void Collides_button_touching_the_right_edge_is_false()
+    {
+        // NewButton ends at 1461.
+        Rectangle touching = new(1461, 1493, 50, 40);
+
+        Assert.False(ChipRowLocator.Collides(NewButton, EnvironmentRow, new[] { Button("Model: Fable 5.1", touching) }));
+    }
+
+    [Fact]
+    public void Collides_button_one_pixel_inside_the_right_edge_is_true()
+    {
+        Rectangle overlapping = new(1460, 1493, 50, 40);
+
+        Assert.True(ChipRowLocator.Collides(NewButton, EnvironmentRow, new[] { Button("Model: Fable 5.1", overlapping) }));
+    }
+
+    [Fact]
+    public void Collides_container_overlapping_the_anchor_too_is_false()
+    {
+        // A button around the whole bottom row covers the anchor as well.
+        Rectangle container = new(996, 1486, 1256, 44);
+
+        Assert.False(ChipRowLocator.Collides(NewButton, EnvironmentRow, new[] { Button("Composer", container) }));
+    }
+
+    [Fact]
+    public void Collides_anchor_chips_are_never_in_the_way()
+    {
+        // Bounds that reach back over the permissions chip.
+        Rectangle overPermissions = new(1300, 1493, 140, 40);
+        ChipElement[] elements =
+        {
+            Button("Environment: AI", EnvironmentChip),
+            Button("Permissions: Bypass permissions", PermissionsChip),
+        };
+
+        Assert.False(ChipRowLocator.Collides(overPermissions, EnvironmentRow, elements));
+    }
+
+    [Fact]
+    public void Collides_offscreen_button_is_false()
+    {
+        ChipElement hidden = new("Model: Fable 5.1", ChipElementKind.Button, new Rectangle(1400, 1493, 103, 40), true);
+
+        Assert.False(ChipRowLocator.Collides(NewButton, EnvironmentRow, new[] { hidden }));
+    }
+
+    [Theory]
+    [InlineData(1330, 1493, 0, 40)]
+    [InlineData(1330, 1500, 50, 0)]
+    public void Collides_button_with_empty_bounds_is_false(int x, int y, int width, int height)
+    {
+        Rectangle empty = new(x, y, width, height);
+
+        Assert.False(ChipRowLocator.Collides(NewButton, EnvironmentRow, new[] { Button("Model: Fable 5.1", empty) }));
+    }
+
+    [Theory]
+    [InlineData(ChipElementKind.Text)]
+    [InlineData(ChipElementKind.CheckBox)]
+    [InlineData(ChipElementKind.Other)]
+    public void Collides_non_button_is_false(ChipElementKind kind)
+    {
+        ChipElement element = new("Model: Fable 5.1", kind, new Rectangle(1400, 1493, 103, 40), false);
+
+        Assert.False(ChipRowLocator.Collides(NewButton, EnvironmentRow, new[] { element }));
     }
 }

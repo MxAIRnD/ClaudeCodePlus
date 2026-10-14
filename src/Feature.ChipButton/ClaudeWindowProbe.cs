@@ -8,8 +8,11 @@ using System.Windows.Automation;
 namespace Feature.ChipButton;
 
 /// <summary>
-/// Reads the chip-row candidates from the foreground window when it belongs to the Claude
-/// desktop app (process name <c>claude</c>); otherwise reads nothing. Read-only UI Automation:
+/// Reads the locator's candidates from the foreground window when it belongs to the Claude
+/// desktop app (process name <c>claude</c>); otherwise reads nothing. Candidates are the
+/// elements named like the older chip row's anchors, and every button UI Automation calls on
+/// screen (the newer composer's chips, and whatever the button could cover). Their properties
+/// come back in one cached request instead of a call per property. Read-only UI Automation:
 /// nothing is invoked or changed in the app. Any UI Automation failure reads as nothing.
 /// </summary>
 internal static class ClaudeWindowProbe
@@ -18,7 +21,10 @@ internal static class ClaudeWindowProbe
 
     private static readonly Condition Candidates = new OrCondition(
         new PropertyCondition(AutomationElement.NameProperty, ChipRowLocator.AddFolderName),
-        new PropertyCondition(AutomationElement.NameProperty, ChipRowLocator.WorktreeName));
+        new PropertyCondition(AutomationElement.NameProperty, ChipRowLocator.WorktreeName),
+        new AndCondition(
+            new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button),
+            new PropertyCondition(AutomationElement.IsOffscreenProperty, false)));
 
     /// <summary>The candidates in the foreground Claude window; empty when Claude is not in front.</summary>
     public static IReadOnlyList<ChipElement> Read()
@@ -31,12 +37,17 @@ internal static class ClaudeWindowProbe
 
         try
         {
-            AutomationElementCollection found = AutomationElement.FromHandle(window)
-                .FindAll(TreeScope.Descendants, Candidates);
+            AutomationElement root = AutomationElement.FromHandle(window);
+            AutomationElementCollection found;
+            using (Properties().Activate())
+            {
+                found = root.FindAll(TreeScope.Descendants, Candidates);
+            }
+
             var elements = new List<ChipElement>(found.Count);
             foreach (AutomationElement e in found)
             {
-                AutomationElement.AutomationElementInformation info = e.Current;
+                AutomationElement.AutomationElementInformation info = e.Cached;
                 System.Windows.Rect r = info.BoundingRectangle;
                 Rectangle bounds = r.IsEmpty
                     ? Rectangle.Empty
@@ -50,6 +61,17 @@ internal static class ClaudeWindowProbe
         {
             return Array.Empty<ChipElement>();
         }
+    }
+
+    // The four properties a ChipElement needs, fetched with the search; no live references kept.
+    private static CacheRequest Properties()
+    {
+        var request = new CacheRequest { AutomationElementMode = AutomationElementMode.None };
+        request.Add(AutomationElement.NameProperty);
+        request.Add(AutomationElement.ControlTypeProperty);
+        request.Add(AutomationElement.BoundingRectangleProperty);
+        request.Add(AutomationElement.IsOffscreenProperty);
+        return request;
     }
 
     private static bool IsClaude(IntPtr window)

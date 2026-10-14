@@ -11,9 +11,10 @@ namespace Feature.ChipButton;
 /// A small borderless, always-on-top button labelled "All projects" that sits right after the
 /// chip row of the Claude app's new-session composer (see <see cref="ChipRowLocator"/>). Once
 /// <see cref="StartWatching"/> is called it polls the foreground window every 400 ms: shown at
-/// the row while a Claude window with the row is in front, hidden otherwise. It never takes
-/// the focus. A left click raises <see cref="Pressed"/>; its context menu offers the same and
-/// "Exit", which raises <see cref="ExitRequested"/>. It does not change the Claude app.
+/// the row while a Claude window with the row is in front, hidden otherwise, and hidden when
+/// it would cover one of the app's own buttons. It never takes the focus. A left click raises
+/// <see cref="Pressed"/>; its context menu offers the same and "Exit", which raises
+/// <see cref="ExitRequested"/>. It does not change the Claude app.
 /// </summary>
 public sealed class ChipButtonForm : Form
 {
@@ -155,7 +156,8 @@ public sealed class ChipButtonForm : Form
             }
 
             Rectangle? anchor = ChipRowLocator.FindAnchor(elements);
-            if (anchor is null)
+            Rectangle bounds = anchor is null ? Rectangle.Empty : BoundsAfter(anchor.Value);
+            if (anchor is null || ChipRowLocator.Collides(bounds, anchor.Value, elements))
             {
                 if (Visible)
                 {
@@ -165,7 +167,7 @@ public sealed class ChipButtonForm : Form
                 return;
             }
 
-            Place(anchor.Value);
+            Place(bounds);
             if (!Visible)
             {
                 Show();
@@ -177,7 +179,7 @@ public sealed class ChipButtonForm : Form
         }
     }
 
-    private void Place(Rectangle anchor)
+    private Rectangle BoundsAfter(Rectangle anchor)
     {
         // The font follows the chip height, so the button matches the row at any display scale.
         float pixels = Math.Max(9f, anchor.Height * 0.46f);
@@ -188,7 +190,11 @@ public sealed class ChipButtonForm : Form
         }
 
         int textWidth = TextRenderer.MeasureText(Label, _font).Width;
-        Rectangle bounds = ChipRowLocator.ButtonBounds(anchor, textWidth);
+        return ChipRowLocator.ButtonBounds(anchor, textWidth);
+    }
+
+    private void Place(Rectangle bounds)
+    {
         if (Bounds != bounds)
         {
             Bounds = bounds;

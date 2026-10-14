@@ -12,9 +12,11 @@ app's own `claude://code/new?folder=` link.
 - **Read-only.** It reads Claude's local session data (the desktop session store and
   `~\.claude\projects`) and never writes to it. It never changes, patches or injects into the
   app.
-- **How the button finds its place.** Windows UI Automation reads the foreground Claude window,
-  and the button sits after the chip named "Add another folder". It shows only while the
-  new-session screen is in front and never takes the focus.
+- **How the button finds its place.** Windows UI Automation reads the foreground Claude window.
+  In the newer layout (the "environments" start card) the button sits after the composer's
+  environment and permissions chips ("Environment: …", "Permissions: …"); in the older one,
+  after the chip named "Add another folder". It shows only while the new-session screen is in
+  front, hides rather than cover one of the app's buttons, and never takes the focus.
 - **Exit.** Right-click the button and choose "Exit" to remove it until the next sign-in.
 
 ## Requirements
@@ -57,6 +59,7 @@ redirects `%APPDATA%` writes into a private store, so the shortcut would not rea
 | `tests/*` | xUnit suites per module, cross-module flows, dependency rules |
 
 ## Caveat
-The button depends on the app's accessible names ("Add another folder", "worktree"), checked
-on Claude desktop 2.26454.2. If an app update renames them, the button stops appearing until
+The button depends on the app's accessible names: "Environment: …" (checked on Claude desktop
+2.37337.1, 2026-10-14) and, for the older layout, "Add another folder" and "worktree" (checked
+on 2.26454.2). If an app update renames them, the button stops appearing until
 `ChipRowLocator`'s constants are updated.

@@ -8,7 +8,7 @@ public enum ChipElementKind
     /// <summary>Any other control type.</summary>
     Other,
 
-    /// <summary>A button (the folder pills, "Add another folder").</summary>
+    /// <summary>A button (the folder pills, "Add another folder", the composer's chips).</summary>
     Button,
 
     /// <summary>A check box (the "worktree" box).</summary>
