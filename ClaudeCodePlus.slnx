@@ -4,12 +4,14 @@
     <Project Path="src/Core.Infrastructure/Core.Infrastructure.csproj" />
     <Project Path="src/Feature.Catalog/Feature.Catalog.csproj" />
     <Project Path="src/Feature.ChipButton/Feature.ChipButton.csproj" />
+    <Project Path="src/Feature.ContextBar/Feature.ContextBar.csproj" />
     <Project Path="src/Feature.DeepLink/Feature.DeepLink.csproj" />
     <Project Path="src/Feature.Picker/Feature.Picker.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Feature.Catalog.Tests/Feature.Catalog.Tests.csproj" />
     <Project Path="tests/Feature.ChipButton.Tests/Feature.ChipButton.Tests.csproj" />
+    <Project Path="tests/Feature.ContextBar.Tests/Feature.ContextBar.Tests.csproj" />
     <Project Path="tests/Feature.DeepLink.Tests/Feature.DeepLink.Tests.csproj" />
     <Project Path="tests/Feature.Picker.Tests/Feature.Picker.Tests.csproj" />
     <Project Path="tests/Tests.Flows/Tests.Flows.csproj" />

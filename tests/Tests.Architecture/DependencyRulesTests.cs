@@ -20,6 +20,7 @@ public class DependencyRulesTests
     {
         "Feature.Catalog",
         "Feature.ChipButton",
+        "Feature.ContextBar",
         "Feature.DeepLink",
         "Feature.Picker",
         "Core.Infrastructure",
@@ -31,9 +32,10 @@ public class DependencyRulesTests
     {
         ["Feature.Catalog"] = Array.Empty<string>(),
         ["Feature.ChipButton"] = Array.Empty<string>(),
+        ["Feature.ContextBar"] = Array.Empty<string>(),
         ["Feature.DeepLink"] = Array.Empty<string>(),
         ["Feature.Picker"] = new[] { "Feature.Catalog", "Feature.DeepLink" },
-        ["Core.Infrastructure"] = new[] { "Feature.Catalog", "Feature.ChipButton", "Feature.DeepLink", "Feature.Picker" },
+        ["Core.Infrastructure"] = new[] { "Feature.Catalog", "Feature.ChipButton", "Feature.ContextBar", "Feature.DeepLink", "Feature.Picker" },
     };
 
     [Fact]

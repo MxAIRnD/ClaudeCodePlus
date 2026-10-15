@@ -16,12 +16,20 @@ internal static class ClaudeDataPaths
     /// The Claude Code projects folder: <c>%CLAUDE_CONFIG_DIR%\projects</c> when the variable is
     /// set and non-empty, otherwise <c>%USERPROFILE%\.claude\projects</c>.
     /// </summary>
-    internal static string TerminalProjectsRoot()
+    internal static string TerminalProjectsRoot() => Path.Combine(ConfigRoot(), "projects");
+
+    /// <summary>
+    /// Where the context-bar mod publishes its figures: <c>%CLAUDE_CONFIG_DIR%\context-bar</c>
+    /// when the variable is set and non-empty, otherwise <c>%USERPROFILE%\.claude\context-bar</c>.
+    /// </summary>
+    internal static string ContextBarRoot() => Path.Combine(ConfigRoot(), "context-bar");
+
+    // Claude Code's configuration directory: %CLAUDE_CONFIG_DIR%, else %USERPROFILE%\.claude.
+    private static string ConfigRoot()
     {
         string? configDir = Environment.GetEnvironmentVariable(ConfigDirVariable);
-        string root = string.IsNullOrWhiteSpace(configDir)
+        return string.IsNullOrWhiteSpace(configDir)
             ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude")
             : configDir.Trim();
-        return Path.Combine(root, "projects");
     }
 }

@@ -13,6 +13,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Feature.Catalog\Feature.Catalog.csproj" />
     <ProjectReference Include="..\..\src\Feature.ChipButton\Feature.ChipButton.csproj" />
+    <ProjectReference Include="..\..\src\Feature.ContextBar\Feature.ContextBar.csproj" />
     <ProjectReference Include="..\..\src\Feature.DeepLink\Feature.DeepLink.csproj" />
     <ProjectReference Include="..\..\src\Feature.Picker\Feature.Picker.csproj" />
     <ProjectReference Include="..\..\src\Core.Infrastructure\Core.Infrastructure.csproj" />

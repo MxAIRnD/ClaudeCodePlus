@@ -1,0 +1,5 @@
+{
+  "name": "claude-code-plus",
+  "owner": { "name": "Maksym Ivanyuk" },
+  "plugins": [{ "name": "context-bar", "source": "./mods/context-bar" }]
+}
