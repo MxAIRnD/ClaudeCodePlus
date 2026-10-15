@@ -10,10 +10,12 @@
     the shortcut would look created and not exist, and the button would start inside that box.
     Verify afterwards with Verify-Button.cmd (a second, unpackaged read).
 
-    Always republishes (the shortcut points into publish\, so a rerun updates the app in place);
-    a running button from publish\ is stopped first (it would lock the exe) and started again at
-    the end. An existing shortcut is left untouched unless -Force is given. Writes nothing else
-    outside the repo.
+    Always republishes into a fresh publish\ (the shortcut points there, so a rerun updates the
+    app in place): a running button from publish\ is stopped first (it would lock the exe), the
+    previous publish\ folder goes to the Recycle Bin (a publish over an older one can keep stale
+    package DLLs; seen 2026-10-15 when the target moved from .NET 10 to .NET 8), and the button
+    is started again at the end. An existing shortcut is left untouched unless -Force is given.
+    Writes nothing else outside the repo.
 #>
 [CmdletBinding()]
 param(
@@ -39,6 +41,22 @@ foreach ($p in $running) {
     Write-Host ("Stopping    : running button pid {0} ({1})" -f $p.Id, $p.Path)
     Stop-Process -Id $p.Id
     $p.WaitForExit(10000) | Out-Null
+}
+
+if (Test-Path -LiteralPath $publishDir) {
+    # A publish over an older one can keep stale files: on 2026-10-15, when the target moved from
+    # .NET 10 to .NET 8, the copy step left the .NET 10 builds of two package DLLs in place (the
+    # package's net8 and net10 builds share one timestamp), and the button crashed at start. So
+    # the previous folder goes to the Recycle Bin first; never a permanent delete.
+    Add-Type -AssemblyName Microsoft.VisualBasic
+    $old   = Get-Item -LiteralPath $publishDir
+    $count = (Get-ChildItem -LiteralPath $publishDir -Recurse -Force | Measure-Object).Count
+    [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory(
+        $old.FullName,
+        [Microsoft.VisualBasic.FileIO.UIOption]::OnlyErrorDialogs,
+        [Microsoft.VisualBasic.FileIO.RecycleOption]::SendToRecycleBin,
+        [Microsoft.VisualBasic.FileIO.UICancelOption]::ThrowException)
+    Write-Host ("Recycled    : {0} ({1} items, to the Recycle Bin)" -f $old.FullName, $count)
 }
 
 & dotnet publish $project -c Release -o $publishDir --nologo

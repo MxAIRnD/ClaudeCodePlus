@@ -126,8 +126,11 @@ explorer.exe "<repo>\tools\Install-Button.cmd"
 It publishes into `publish\`, creates the Startup shortcut "Claude Code Plus button"
 (`ClaudeCodePlus.exe --button`) and starts the button. The result is written to
 `tools\_install.log`. Check it with `tools\Verify-Button.cmd`, which writes `tools\_verify.log`.
-Rerun the installer after every change: it stops the running button, republishes and starts it
-again.
+Rerun the installer after every change: it stops the running button, moves the previous
+`publish\` folder to the Recycle Bin, publishes afresh and starts the button again. The fresh
+folder matters: a publish over an older one can keep stale package DLLs (seen when the target
+moved from .NET 10 to .NET 8, when the button then crashed at start), so a publish done by hand
+should go into an empty folder too.
 
 Don't run the installer from a Claude Code terminal inside the desktop app. The packaged app
 redirects `%APPDATA%` writes into a private store, so the shortcut would not really be created.
