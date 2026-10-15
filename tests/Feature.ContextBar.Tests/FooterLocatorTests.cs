@@ -4,7 +4,10 @@ using Xunit;
 
 namespace Feature.ContextBar.Tests;
 
-/// <summary>Black-box behavior of <see cref="FooterLocator.FindSlot"/> over in-memory element snapshots.</summary>
+/// <summary>
+/// Black-box behavior of <see cref="FooterLocator"/> over in-memory element snapshots: the slot,
+/// the shown session's id from the page URL, the app version, and the diagnostics reports.
+/// </summary>
 public sealed class FooterLocatorTests
 {
     // A running session's prompt footer as UI Automation reported it (physical px, app build
@@ -16,11 +19,24 @@ public sealed class FooterLocatorTests
     private static readonly Rectangle UsageChip = new(1954, 1493, 40, 40);
     private static readonly Rectangle SendFeedback = new(633, 1492, 40, 40);
     private static readonly Rectangle UserMenu = new(13, 1489, 217, 46);
+    private static readonly Rectangle Page = new(0, 0, 2561, 1548);
+
+    // The two page documents of the window on the same build: the shell page (no name, a file
+    // URL naming the packaged app's version) and the session page (the title, the session URL).
+    private const string SessionId = "local_8804b5b6-7c1d-4e2f-9a3b-0c1d2e3f4a5b";
+    private const string SessionUrl = "https://claude.ai/epitaxy/" + SessionId;
+    private const string ShellUrl = "file:///C:/Program%20Files/WindowsApps/Claude_2.37337.1.0_x64__pzs8sxrjxfjjc/app/resources/app.asar/.vite/renderer/main_window/index.html";
 
     private static FooterElement Button(string name, Rectangle bounds, bool isOffscreen = false) =>
         new(name, FooterElementKind.Button, bounds, isOffscreen);
 
     private static FooterElement Other(string name, Rectangle bounds) => new(name, FooterElementKind.Other, bounds, false);
+
+    private static FooterElement Document(string name, string url) => new(name, FooterElementKind.Document, Page, false, url);
+
+    private static FooterElement ShellDocument() => Document(string.Empty, ShellUrl);
+
+    private static FooterElement SessionDocument(string url = SessionUrl) => Document("Card channel line and now-playing icon - Claude Code", url);
 
     private static List<FooterElement> RunningSession(Rectangle? model = null) => new()
     {
@@ -33,6 +49,15 @@ public sealed class FooterLocatorTests
         Button("Effort: Max", EffortChip),
         Button("Usage: 57% of session limit, Resets in 2 hr 22 min", UsageChip),
     };
+
+    private static List<FooterElement> ShownSession()
+    {
+        List<FooterElement> elements = RunningSession();
+        elements.Add(Other("Claude", Page));
+        elements.Add(ShellDocument());
+        elements.Add(SessionDocument());
+        return elements;
+    }
 
     [Fact]
     public void Running_session_slot_runs_from_the_mode_chip_to_the_model_chip_with_half_a_height_of_gap()
@@ -117,37 +142,123 @@ public sealed class FooterLocatorTests
         Assert.Equal(new Rectangle(1009, 1493, 744, 40), FooterLocator.FindSlot(elements));
     }
 
-    [Fact]
-    public void The_shown_session_title_is_the_page_title_less_its_suffix()
-    {
-        var elements = new List<FooterElement>(RunningSession())
-        {
-            new("Claude", FooterElementKind.Other, new Rectangle(0, 0, 2561, 1548), false),
-            new(string.Empty, FooterElementKind.Document, new Rectangle(0, 0, 2561, 1548), false),
-            new("Card channel line and now-playing icon - Claude Code", FooterElementKind.Document, new Rectangle(0, 0, 2561, 1548), false),
-        };
+    // --- the shown session ---
 
-        Assert.Equal("Card channel line and now-playing icon", FooterLocator.ShownSessionTitle(elements));
+    [Fact]
+    public void The_shown_session_id_is_the_local_id_of_the_session_documents_URL()
+    {
+        Assert.Equal(SessionId, FooterLocator.ShownSessionId(ShownSession()));
+        // the documents' order does not matter, nor the page title
+        Assert.Equal(SessionId, FooterLocator.ShownSessionId(new[] { Document("Settings - Claude", SessionUrl), ShellDocument() }));
     }
 
     [Fact]
-    public void No_titled_document_means_no_shown_title()
+    public void Only_a_session_page_URL_on_a_document_gives_an_id()
     {
-        var bare = new List<FooterElement>(RunningSession()) { new(string.Empty, FooterElementKind.Document, Rectangle.Empty, false) };
-        var other = new List<FooterElement> { new("Settings - Claude", FooterElementKind.Document, Rectangle.Empty, false) };
-        var empty = new List<FooterElement> { new("  - Claude Code", FooterElementKind.Document, Rectangle.Empty, false) };
-        var notADocument = new List<FooterElement> { new("Title - Claude Code", FooterElementKind.Button, Rectangle.Empty, false) };
+        var shellOnly = new List<FooterElement>(RunningSession()) { ShellDocument() };
+        var noDocument = new List<FooterElement>(RunningSession()) { Other("Claude", Page) };
+        var newSession = new List<FooterElement> { ShellDocument(), Document("Claude Code", "https://claude.ai/epitaxy/new") };
+        var otherRoutes = new List<FooterElement>
+        {
+            Document("Claude Code", "https://claude.ai/code/" + SessionId),
+            Document("Claude Code", "claude://claude.ai/epitaxy/" + SessionId),
+            Document("Claude Code", SessionUrl + "/settings"),
+            Document("Claude Code", "https://claude.ai/epitaxy/local_8804b5b6"),
+            Document("Claude Code", "https://claude.ai/epitaxy/LOCAL_8804B5B6-7C1D-4E2F-9A3B-0C1D2E3F4A5B"),
+        };
+        var notADocument = new List<FooterElement> { new("Title - Claude Code", FooterElementKind.Button, Page, false, SessionUrl) };
 
-        Assert.Null(FooterLocator.ShownSessionTitle(bare));
-        Assert.Null(FooterLocator.ShownSessionTitle(other));
-        Assert.Null(FooterLocator.ShownSessionTitle(empty));
-        Assert.Null(FooterLocator.ShownSessionTitle(notADocument));
+        Assert.Null(FooterLocator.ShownSessionId(shellOnly));
+        Assert.Null(FooterLocator.ShownSessionId(noDocument));
+        Assert.Null(FooterLocator.ShownSessionId(newSession));
+        Assert.Null(FooterLocator.ShownSessionId(otherRoutes));
+        Assert.Null(FooterLocator.ShownSessionId(notADocument));
+        Assert.Null(FooterLocator.ShownSessionId(new List<FooterElement>()));
+    }
+
+    [Fact]
+    public void The_app_version_is_read_from_the_shell_documents_file_URL()
+    {
+        Assert.Equal("2.37337.1.0", FooterLocator.AppVersion(ShownSession()));
+        Assert.Null(FooterLocator.AppVersion(new[] { SessionDocument() }));
+        Assert.Null(FooterLocator.AppVersion(new[] { Document(string.Empty, "file:///C:/Users/x/AppData/Local/Programs/claude/resources/app.asar/index.html") }));
+        Assert.Null(FooterLocator.AppVersion(RunningSession()));
+    }
+
+    // --- the diagnostics reports ---
+
+    [Fact]
+    public void A_session_shown_without_a_footer_slot_is_reported_with_the_model_chips_row()
+    {
+        List<FooterElement> elements = ShownSession();
+        elements[4] = Button("Permissions: Bypass permissions", ModeChip); // a renamed mode chip: the row reads as the composer
+
+        string? report = FooterLocator.Report(elements, FooterLocator.FindSlot(elements), FooterLocator.ShownSessionId(elements), false);
+
+        Assert.NotNull(report);
+        Assert.StartsWith("app 2.37337.1.0: a session is shown but no footer slot was found; buttons on the model chip's row: ", report);
+        Assert.Contains("'Permissions: Bypass permissions' 770,1493 219x40 | 'Model: Fable 5.1' 1773,1493 104x40 | 'Effort: Max' 1883,1493 64x40", report);
+        Assert.Contains("'Usage: 57% of session limit, Resets in 2…' 1954,1493 40x40", report); // names cut to 40 characters
+        Assert.DoesNotContain("Something above", report);
+        Assert.DoesNotContain(SessionId, report);
+    }
+
+    [Fact]
+    public void A_session_shown_without_any_model_chip_is_reported_with_the_lowest_row()
+    {
+        List<FooterElement> elements = ShownSession();
+        elements.RemoveAll(e => e.Name.StartsWith("Model:", System.StringComparison.Ordinal));
+        elements.Add(Button("Something above", new Rectangle(1500, 1400, 100, 40)));
+
+        string? report = FooterLocator.Report(elements, null, SessionId, false);
+
+        Assert.NotNull(report);
+        Assert.Contains("'Bypass permissions' 770,1493 219x40 | 'Effort: Max' 1883,1493 64x40", report);
+        Assert.DoesNotContain("Something above", report);
+    }
+
+    [Fact]
+    public void A_footer_slot_without_a_session_URL_is_reported_with_the_documents()
+    {
+        var elements = new List<FooterElement>(RunningSession()) { ShellDocument(), Document("Claude Code", "https://claude.ai/epitaxy/new") };
+
+        string? report = FooterLocator.Report(elements, FooterLocator.FindSlot(elements), null, false);
+
+        Assert.NotNull(report);
+        Assert.StartsWith("app 2.37337.1.0: a footer slot but no session page URL; documents: [name 0 chars, url file:///C:/Program%20Files/WindowsApps/Claude_2.37337.1.0_x64__pzs8sxrjxfjjc/app/resources/app.asar/.vite/renderer/main_…] [name 11 chars, url https://claude.ai/epitaxy/new]", report);
+    }
+
+    [Fact]
+    public void A_shown_session_without_a_figures_file_is_reported_with_its_id_cut_short()
+    {
+        List<FooterElement> elements = ShownSession();
+
+        string? report = FooterLocator.Report(elements, FooterLocator.FindSlot(elements), SessionId, false);
+
+        Assert.Equal("app 2.37337.1.0: no figures file for the shown session local_8804b5b6… (the context-bar mod is not publishing for it)", report);
+    }
+
+    [Fact]
+    public void Nothing_is_reported_when_the_line_can_be_drawn_or_Claude_is_not_in_front_or_no_session_and_no_footer_show()
+    {
+        List<FooterElement> shown = ShownSession();
+        Rectangle? slot = FooterLocator.FindSlot(shown);
+        var settings = new List<FooterElement> { ShellDocument(), Document("Settings - Claude", "https://claude.ai/settings") };
+        List<FooterElement> unknownBuild = ShownSession();
+        unknownBuild.RemoveAll(e => e.Name.Length == 0 && e.Kind == FooterElementKind.Document);
+
+        Assert.Null(FooterLocator.Report(new List<FooterElement>(), null, null, false));
+        Assert.Null(FooterLocator.Report(shown, slot, SessionId, true));
+        Assert.Null(FooterLocator.Report(settings, null, null, false));
+        Assert.StartsWith("app unknown: ", FooterLocator.Report(unknownBuild, slot, SessionId, false));
     }
 
     [Fact]
     public void Null_elements_throw()
     {
         Assert.Throws<System.ArgumentNullException>(() => FooterLocator.FindSlot(null!));
-        Assert.Throws<System.ArgumentNullException>(() => FooterLocator.ShownSessionTitle(null!));
+        Assert.Throws<System.ArgumentNullException>(() => FooterLocator.ShownSessionId(null!));
+        Assert.Throws<System.ArgumentNullException>(() => FooterLocator.AppVersion(null!));
+        Assert.Throws<System.ArgumentNullException>(() => FooterLocator.Report(null!, null, null, false));
     }
 }

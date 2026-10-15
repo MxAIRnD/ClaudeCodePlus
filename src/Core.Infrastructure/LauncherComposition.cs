@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Threading;
 using System.Windows.Forms;
 using Feature.Catalog;
@@ -20,9 +21,11 @@ public static class LauncherComposition
 
     /// <summary>
     /// Composes the launcher and runs the picker window until it closes. Options: the desktop
-    /// session store under <c>%APPDATA%</c>, the projects folder under <c>%USERPROFILE%\.claude</c>
-    /// (or <c>%CLAUDE_CONFIG_DIR%</c>), every noise switch at its default (hidden). Call once,
-    /// from a thread marked <c>[STAThread]</c>, after WinForms initialization.
+    /// session store under <c>%APPDATA%</c>, the projects folder and the context-bar figures
+    /// folder under <c>%USERPROFILE%\.claude</c> (or <c>%CLAUDE_CONFIG_DIR%</c>), the diagnostics
+    /// file <c>%LOCALAPPDATA%\ClaudeCodePlus\diagnostics.log</c>, every noise switch at its
+    /// default (hidden). Call once, from a thread marked <c>[STAThread]</c>, after WinForms
+    /// initialization.
     /// </summary>
     public static void Run()
     {
@@ -93,17 +96,21 @@ public static class LauncherComposition
             DesktopSessionsRoot = ClaudeDataPaths.DesktopSessionsRoot(),
             TerminalProjectsRoot = ClaudeDataPaths.TerminalProjectsRoot(),
         };
+
+        // One diagnostics file for the button and the line, each writing once per change.
+        string diagnosticsFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ClaudeCodePlus", "diagnostics.log");
+        var buttonOptions = new ChipButtonOptions { DiagnosticsFile = diagnosticsFile };
         var barOptions = new ContextBarOptions
         {
-            SessionsRoot = ClaudeDataPaths.DesktopSessionsRoot(),
             FiguresRoot = ClaudeDataPaths.ContextBarRoot(),
+            DiagnosticsFile = diagnosticsFile,
         };
 
         return new ServiceCollection()
             .AddCatalog(options)
             .AddDeepLink()
             .AddPicker()
-            .AddChipButton()
+            .AddChipButton(buttonOptions)
             .AddContextBar(barOptions)
             .BuildServiceProvider();
     }

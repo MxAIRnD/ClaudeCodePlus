@@ -11,16 +11,18 @@ public enum FooterElementKind
     /// <summary>A button (the prompt footer's chips).</summary>
     Button,
 
-    /// <summary>A document (the app's page, named by its title: "&lt;session title&gt; - Claude Code").</summary>
+    /// <summary>A document (one of the app's pages: its value is the page's URL, its name the page's title).</summary>
     Document,
 }
 
 /// <summary>
 /// One element of the Claude window as UI Automation reports it: its accessible name, its kind,
-/// its bounds in physical screen pixels, and whether UI Automation calls it off screen.
+/// its bounds in physical screen pixels, whether UI Automation calls it off screen, and its value
+/// (a document's page URL; empty for an element without one).
 /// </summary>
 /// <param name="Name">The accessible name, as reported (never null; empty when none).</param>
 /// <param name="Kind">The control type, reduced to the kinds the locator uses.</param>
 /// <param name="Bounds">Bounding rectangle in physical screen pixels; empty when not drawn.</param>
 /// <param name="IsOffscreen">UI Automation's <c>IsOffscreen</c> (scrolled out or hidden).</param>
-public readonly record struct FooterElement(string Name, FooterElementKind Kind, Rectangle Bounds, bool IsOffscreen);
+/// <param name="Value">The <c>ValuePattern</c> value: a document's page URL; empty when the element has none.</param>
+public readonly record struct FooterElement(string Name, FooterElementKind Kind, Rectangle Bounds, bool IsOffscreen, string Value = "");

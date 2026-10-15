@@ -11,9 +11,10 @@ namespace Feature.ContextBar;
 /// Reads the locator's candidates from the foreground window when it belongs to the Claude
 /// desktop app (process name <c>claude</c>); otherwise reads nothing. Candidates are every
 /// button UI Automation calls on screen (the footer's chips among them) and every document (the
-/// app's page, whose name is its title). Their properties come back in one cached request
-/// instead of a call per property. Read-only UI Automation: nothing is invoked or changed in
-/// the app. Any UI Automation failure reads as nothing.
+/// app's pages: the shell page and the page of the session in front, whose value is its URL and
+/// whose name is its title). Their properties come back in one cached request instead of a call
+/// per property. Read-only UI Automation: nothing is invoked or changed in the app. Any UI
+/// Automation failure reads as nothing.
 /// </summary>
 internal static class FooterProbe
 {
@@ -51,7 +52,9 @@ internal static class FooterProbe
                 Rectangle bounds = r.IsEmpty
                     ? Rectangle.Empty
                     : new Rectangle((int)Math.Round(r.X), (int)Math.Round(r.Y), (int)Math.Round(r.Width), (int)Math.Round(r.Height));
-                elements.Add(new FooterElement(info.Name ?? string.Empty, KindOf(info.ControlType), bounds, info.IsOffscreen));
+                // A document's value is its page URL; an element without the pattern answers NotSupported.
+                string value = e.GetCachedPropertyValue(ValuePattern.ValueProperty, true) as string ?? string.Empty;
+                elements.Add(new FooterElement(info.Name ?? string.Empty, KindOf(info.ControlType), bounds, info.IsOffscreen, value));
             }
 
             return elements;
@@ -62,7 +65,7 @@ internal static class FooterProbe
         }
     }
 
-    // The four properties a FooterElement needs, fetched with the search; no live references kept.
+    // The five properties a FooterElement needs, fetched with the search; no live references kept.
     private static CacheRequest Properties()
     {
         var request = new CacheRequest { AutomationElementMode = AutomationElementMode.None };
@@ -70,6 +73,7 @@ internal static class FooterProbe
         request.Add(AutomationElement.ControlTypeProperty);
         request.Add(AutomationElement.BoundingRectangleProperty);
         request.Add(AutomationElement.IsOffscreenProperty);
+        request.Add(ValuePattern.ValueProperty);
         return request;
     }
 

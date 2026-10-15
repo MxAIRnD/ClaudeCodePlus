@@ -10,10 +10,12 @@ namespace Feature.ChipButton;
 /// <summary>
 /// Reads the locator's candidates from the foreground window when it belongs to the Claude
 /// desktop app (process name <c>claude</c>); otherwise reads nothing. Candidates are the
-/// elements named like the older chip row's anchors, and every button UI Automation calls on
-/// screen (the newer composer's chips, and whatever the button could cover). Their properties
-/// come back in one cached request instead of a call per property. Read-only UI Automation:
-/// nothing is invoked or changed in the app. Any UI Automation failure reads as nothing.
+/// elements named like the older chip row's anchors, every button UI Automation calls on
+/// screen (the newer composer's chips, and whatever the button could cover), and every document
+/// (the app's pages, whose value is the page's URL: it tells a running session from the rest,
+/// for the diagnostics). Their properties come back in one cached request instead of a call
+/// per property. Read-only UI Automation: nothing is invoked or changed in the app. Any UI
+/// Automation failure reads as nothing.
 /// </summary>
 internal static class ClaudeWindowProbe
 {
@@ -24,7 +26,8 @@ internal static class ClaudeWindowProbe
         new PropertyCondition(AutomationElement.NameProperty, ChipRowLocator.WorktreeName),
         new AndCondition(
             new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button),
-            new PropertyCondition(AutomationElement.IsOffscreenProperty, false)));
+            new PropertyCondition(AutomationElement.IsOffscreenProperty, false)),
+        new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Document));
 
     /// <summary>The candidates in the foreground Claude window; empty when Claude is not in front.</summary>
     public static IReadOnlyList<ChipElement> Read()
@@ -52,7 +55,9 @@ internal static class ClaudeWindowProbe
                 Rectangle bounds = r.IsEmpty
                     ? Rectangle.Empty
                     : new Rectangle((int)Math.Round(r.X), (int)Math.Round(r.Y), (int)Math.Round(r.Width), (int)Math.Round(r.Height));
-                elements.Add(new ChipElement(info.Name ?? string.Empty, KindOf(info.ControlType), bounds, info.IsOffscreen));
+                // A document's value is its page URL; an element without the pattern answers NotSupported.
+                string value = e.GetCachedPropertyValue(ValuePattern.ValueProperty, true) as string ?? string.Empty;
+                elements.Add(new ChipElement(info.Name ?? string.Empty, KindOf(info.ControlType), bounds, info.IsOffscreen, value));
             }
 
             return elements;
@@ -63,7 +68,7 @@ internal static class ClaudeWindowProbe
         }
     }
 
-    // The four properties a ChipElement needs, fetched with the search; no live references kept.
+    // The five properties a ChipElement needs, fetched with the search; no live references kept.
     private static CacheRequest Properties()
     {
         var request = new CacheRequest { AutomationElementMode = AutomationElementMode.None };
@@ -71,6 +76,7 @@ internal static class ClaudeWindowProbe
         request.Add(AutomationElement.ControlTypeProperty);
         request.Add(AutomationElement.BoundingRectangleProperty);
         request.Add(AutomationElement.IsOffscreenProperty);
+        request.Add(ValuePattern.ValueProperty);
         return request;
     }
 
@@ -97,6 +103,7 @@ internal static class ClaudeWindowProbe
         type == ControlType.Button ? ChipElementKind.Button
         : type == ControlType.CheckBox ? ChipElementKind.CheckBox
         : type == ControlType.Text ? ChipElementKind.Text
+        : type == ControlType.Document ? ChipElementKind.Document
         : ChipElementKind.Other;
 
     [DllImport("user32.dll")]

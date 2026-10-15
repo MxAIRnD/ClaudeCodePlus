@@ -7,13 +7,15 @@ namespace Feature.ChipButton;
 public static class ChipButtonServices
 {
     /// <summary>
-    /// Registers <see cref="ChipButtonForm"/> as transient (one window per resolve; it needs
-    /// nothing else). Throws <see cref="ArgumentNullException"/> for a null argument. Returns
-    /// <paramref name="services"/> itself, for chaining.
+    /// Registers <paramref name="options"/> as a singleton and <see cref="ChipButtonForm"/> as
+    /// transient (one window per resolve). Throws <see cref="ArgumentNullException"/> for a null
+    /// argument. Returns <paramref name="services"/> itself, for chaining.
     /// </summary>
-    public static IServiceCollection AddChipButton(this IServiceCollection services)
+    public static IServiceCollection AddChipButton(this IServiceCollection services, ChipButtonOptions options)
     {
         ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(options);
+        services.AddSingleton(options);
         services.AddTransient<ChipButtonForm>();
         return services;
     }

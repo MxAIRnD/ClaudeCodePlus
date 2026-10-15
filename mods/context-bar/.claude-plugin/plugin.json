@@ -1,6 +1,6 @@
 {
   "name": "context-bar",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A thin gradient bar above the prompt showing how much of the context window this session has used.",
   "types": "./types/index.d.ts"
 }

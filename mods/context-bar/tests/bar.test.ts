@@ -1,7 +1,20 @@
 import type { On, RenderElement } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
-import { BAND_UNITS, FOOTER_CELLS, barSvg, colorAt, describeReading, figuresJson, figuresPath, fmtTokens } from '../hooks/register'
+import {
+  BAND_UNITS,
+  FOOTER_CELLS,
+  barSvg,
+  colorAt,
+  describeReading,
+  describeSession,
+  figuresJson,
+  figuresPath,
+  fmtTokens,
+} from '../hooks/register'
+
+/** The desktop app's id of a session, as CLAUDE_CODE_HOST_SESSION_ID carries it. */
+const HOST = 'local_8804b5b6-7c1d-4e2f-9a3b-0c1d2e3f4a5b'
 
 test('the gradient runs cyan through green, lime, yellow and orange to red', async () => {
   expect(colorAt(0)).toBe('#22d3ee')
@@ -48,15 +61,17 @@ test('the figures line names the counts and the threshold', async () => {
   )
 })
 
-test('the figures file sits under the config dir and carries the session and the figures', async () => {
-  expect(figuresPath('C:\\Users\\tester\\.claude\\', 'abc')).toBe('C:\\Users\\tester\\.claude\\context-bar\\abc.json')
+test('the figures file sits under the config dir and carries both ids and the figures', async () => {
+  expect(figuresPath('C:\\Users\\tester\\.claude\\', HOST)).toBe(`C:\\Users\\tester\\.claude\\context-bar\\${HOST}.json`)
+  expect(figuresPath('C:\\Users\\tester\\.claude', 'abc')).toBe('C:\\Users\\tester\\.claude\\context-bar\\abc.json')
   const text = figuresJson(
-    { id: 'abc', cwd: 'C:\\Work', model: 'claude-x' },
+    { id: 'abc', hostId: HOST, cwd: 'C:\\Work', model: 'claude-x' },
     { tokens: 84200, window: 200000, percent: 42, threshold: 184000, at: 1000 },
     false,
   )
   expect(JSON.parse(text)).toEqual({
     sessionId: 'abc',
+    hostSessionId: HOST,
     cwd: 'C:\\Work',
     model: 'claude-x',
     tokens: 84200,
@@ -66,6 +81,19 @@ test('the figures file sits under the config dir and carries the session and the
     at: 1000,
     isHidden: false,
   })
+  // a session the desktop did not start has no host id
+  expect(JSON.parse(figuresJson({ id: 'abc', hostId: null, cwd: 'C:\\Work', model: 'claude-x' }, { tokens: null, window: 200000, percent: null, threshold: null, at: 0 }, true))).toMatchObject({
+    sessionId: 'abc',
+    hostSessionId: null,
+    tokens: null,
+    isHidden: true,
+  })
+})
+
+test('the session line names the ids and the file', async () => {
+  expect(describeSession({ id: 'abc', hostId: HOST, file: 'C:\\f.json' })).toBe(`context-bar: session abc, desktop ${HOST}, file C:\\f.json`)
+  expect(describeSession({ id: 'abc', hostId: null, file: 'C:\\f.json' })).toBe('context-bar: session abc, desktop none, file C:\\f.json')
+  expect(describeSession(null)).toBe('context-bar: session not learned yet.')
 })
 
 const BAND = {
@@ -86,17 +114,20 @@ const FOOTER = {
 } as const
 
 /**
- * The engine beneath the plugin: a session, a reading (84200 of 200000 by
- * default), a file system that remembers what was written, and its own
- * drawing at every site: the mode labels joined for the footer, the words
- * "the engine" elsewhere.
+ * The engine beneath the plugin: a session (its id in `state`, so a test can
+ * move it as /clear does), an environment (`env` added to the tester's
+ * profile), a reading (84200 of 200000 by default), a file system that
+ * remembers what was written, the classic SessionStart and the measurement
+ * with nothing beneath, and its own drawing at every site: the mode labels
+ * joined for the footer, the words "the engine" elsewhere.
  */
-const engine = (on: On, tokens = 84200) => {
+const engine = (on: On, tokens = 84200, env: Readonly<Record<string, string>> = {}) => {
   const clock = mock.clock(on, { now: 1000 })
-  mock.env(on, { USERPROFILE: 'C:\\Users\\tester' })
+  mock.env(on, { USERPROFILE: 'C:\\Users\\tester', ...env })
   const written: { path: string; text: string }[] = []
+  const state = { sessionId: 'sess-1' }
   on('command.register', async (_$, e) => ({ value: { command: e.name } }))
-  on('session.id', async () => ({ value: 'sess-1' }))
+  on('session.id', async () => ({ value: state.sessionId }))
   on('session.cwd', async () => ({ value: 'C:\\Work' }))
   on('session.model', async () => ({ value: 'claude-x' }))
   on('session.usage', async () => ({
@@ -107,13 +138,15 @@ const engine = (on: On, tokens = 84200) => {
     return { value: undefined }
   })
   on('session.start', async (_$, e) => ({ cwd: e.cwd }))
+  on('session.measure', async (_$, e) => ({ changed: e.changed }))
+  on('classic.SessionStart', async () => ({}))
   on('ui.render', async (_$, e) => {
     const { Text } = _$.ui.resolve(e)
     const modes = (e.props as { modes?: readonly string[] }).modes
     return h(Text, {}, modes ? modes.join(' & ') : 'the engine') as RenderElement
   })
 
-  return { clock, written }
+  return { clock, written, state }
 }
 
 test('by default nothing is drawn in the app and the figures are published to the file', async ($, on) => {
@@ -125,8 +158,9 @@ test('by default nothing is drawn in the app and the figures are published to th
 
   expect(written.length).toBeGreaterThan(0)
   const last = written[written.length - 1]!
+  // no desktop id in the environment: the file is named by the engine's session id
   expect(last.path).toBe('C:\\Users\\tester\\.claude\\context-bar\\sess-1.json')
-  expect(JSON.parse(last.text)).toMatchObject({ sessionId: 'sess-1', cwd: 'C:\\Work', tokens: 84200, window: 200000, isHidden: false })
+  expect(JSON.parse(last.text)).toMatchObject({ sessionId: 'sess-1', hostSessionId: null, cwd: 'C:\\Work', tokens: 84200, window: 200000, isHidden: false })
 
   for (const site of [FOOTER, BAND] as const) {
     const ui = await $.ui.mount({ plugin: 'context-bar', surface: 'desktop', ...site })
@@ -134,6 +168,67 @@ test('by default nothing is drawn in the app and the figures are published to th
     expect(await ui.find({ type: 'Text', text: '42%' })).toBeUndefined()
     await ui.unmount()
   }
+})
+
+test('the file is named by the desktop session id when the engine has one, with both ids inside', async ($, on) => {
+  const { clock, written } = engine(on, 84200, { CLAUDE_CODE_HOST_SESSION_ID: HOST })
+  mock.store(on)
+
+  await $.session.start({ cwd: 'C:\\Work', surface: 'desktop', isInteractive: true })
+  await clock.settle()
+
+  const last = written[written.length - 1]!
+  expect(last.path).toBe(`C:\\Users\\tester\\.claude\\context-bar\\${HOST}.json`)
+  expect(JSON.parse(last.text)).toMatchObject({ sessionId: 'sess-1', hostSessionId: HOST, tokens: 84200, isHidden: false })
+})
+
+test('after /clear the same desktop-keyed file carries the new engine id, hidden still when the store says so', async ($, on) => {
+  const { clock, written, state } = engine(on, 84200, { CLAUDE_CODE_HOST_SESSION_ID: HOST })
+  mock.store(on, { isHidden: true })
+
+  await $.session.start({ cwd: 'C:\\Work', surface: 'desktop', isInteractive: true })
+  await clock.settle()
+  const before = written.length
+  expect(JSON.parse(written[before - 1]!.text)).toMatchObject({ sessionId: 'sess-1', isHidden: true })
+
+  state.sessionId = 'sess-2'
+  await $.classic.SessionStart({ source: 'clear' })
+  await clock.settle()
+
+  expect(written.length).toBeGreaterThan(before)
+  const last = written[written.length - 1]!
+  expect(last.path).toBe(`C:\\Users\\tester\\.claude\\context-bar\\${HOST}.json`)
+  expect(JSON.parse(last.text)).toMatchObject({ sessionId: 'sess-2', hostSessionId: HOST, isHidden: true, tokens: 84200 })
+})
+
+test('without a desktop id the file follows the engine id after /clear', async ($, on) => {
+  const { clock, written, state } = engine(on)
+  mock.store(on)
+
+  await $.session.start({ cwd: 'C:\\Work', surface: 'desktop', isInteractive: true })
+  await clock.settle()
+  state.sessionId = 'sess-2'
+  await $.classic.SessionStart({ source: 'clear' })
+  await clock.settle()
+
+  const last = written[written.length - 1]!
+  expect(last.path).toBe('C:\\Users\\tester\\.claude\\context-bar\\sess-2.json')
+  expect(JSON.parse(last.text)).toMatchObject({ sessionId: 'sess-2', hostSessionId: null })
+})
+
+test('a changed engine id is learned again at the next publish, without any event for it', async ($, on) => {
+  const { clock, written, state } = engine(on, 84200, { CLAUDE_CODE_HOST_SESSION_ID: HOST })
+  mock.store(on)
+
+  await $.session.start({ cwd: 'C:\\Work', surface: 'desktop', isInteractive: true })
+  await clock.settle()
+  state.sessionId = 'sess-3'
+  await $.session.measure({ context: { tokens: 90000, window: 200000, percent: 45 }, rateLimits: [], changed: ['context'] })
+  await clock.settle()
+
+  const last = written[written.length - 1]!
+  expect(last.path).toBe(`C:\\Users\\tester\\.claude\\context-bar\\${HOST}.json`)
+  expect(JSON.parse(last.text)).toMatchObject({ sessionId: 'sess-3', hostSessionId: HOST, tokens: 90000 })
 })
 
 test('/ctxbar footer (kept in the store): an inline run on the desktop, a label on the terminal', async ($, on) => {

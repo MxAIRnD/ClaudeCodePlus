@@ -919,4 +919,81 @@ public sealed class ChipRowLocatorTests
 
         Assert.False(ChipRowLocator.Collides(NewButton, EnvironmentRow, new[] { element }));
     }
+
+    // --- AppVersion and Report: the diagnostics ---
+
+    private const string SessionUrl = "https://claude.ai/epitaxy/local_8804b5b6-7c1d-4e2f-9a3b-0c1d2e3f4a5b";
+    private const string ShellUrl = "file:///C:/Program%20Files/WindowsApps/Claude_2.37337.1.0_x64__pzs8sxrjxfjjc/app/resources/app.asar/.vite/renderer/main_window/index.html";
+
+    private static ChipElement Document(string name, string url) => new(name, ChipElementKind.Document, new Rectangle(0, 0, 2561, 1548), false, url);
+
+    // The newer layout's new-session screen with the environment chip renamed by an app update:
+    // no anchor, the composer there, the page documents as the probe reports them.
+    private static List<ChipElement> RenamedComposer()
+    {
+        List<ChipElement> elements = NewSessionComposer();
+        elements[3] = Button("Env: AI", EnvironmentChip);
+        elements.Add(Document(string.Empty, ShellUrl));
+        elements.Add(Document("Claude Code", "https://claude.ai/epitaxy/new"));
+        return elements;
+    }
+
+    [Fact]
+    public void AppVersion_is_read_from_the_shell_documents_file_URL()
+    {
+        Assert.Equal("2.37337.1.0", ChipRowLocator.AppVersion(RenamedComposer()));
+        Assert.Null(ChipRowLocator.AppVersion(NewSessionComposer()));
+        Assert.Null(ChipRowLocator.AppVersion(new[] { Document(string.Empty, "file:///C:/Users/x/AppData/Local/Programs/claude/resources/app.asar/index.html") }));
+    }
+
+    [Fact]
+    public void Report_on_a_composer_without_an_anchor_lists_the_documents_and_the_lowest_row()
+    {
+        List<ChipElement> elements = RenamedComposer();
+
+        string? report = ChipRowLocator.Report(elements, ChipRowLocator.FindAnchor(elements));
+
+        Assert.Equal(
+            "app 2.37337.1.0: a composer but no chip-row anchor; documents: [name 0 chars, url file:///C:/Program%20Files/WindowsApps/Claude_2.37337.1.0_x64__pzs8sxrjxfjjc/app/resources/app.asar/.vite/renderer/main_…] [name 11 chars, url https://claude.ai/epitaxy/new]; buttons on the lowest row: "
+            + "'Env: AI' 1012,1493 75x40 | 'Permissions: Bypass permissions' 1092,1493 219x40 | 'Model: Fable 5.1' 2005,1493 103x40 | 'Effort: Extra' 2114,1493 74x40 | 'Usage: Weekly' 2196,1493 40x40",
+            report);
+    }
+
+    [Fact]
+    public void Report_cuts_names_to_forty_characters_and_session_ids_to_eight_hex_digits()
+    {
+        List<ChipElement> elements = RenamedComposer();
+        elements[7] = Button("Usage: 57% of session limit, Resets in 2 hr 22 min", new Rectangle(2196, 1493, 40, 40));
+        elements[elements.Count - 1] = Document("Claude Code", "https://claude.ai/epitaxy/new?from=local_8804b5b6-7c1d-4e2f-9a3b-0c1d2e3f4a5b");
+
+        string? report = ChipRowLocator.Report(elements, null);
+
+        Assert.NotNull(report);
+        Assert.Contains("'Usage: 57% of session limit, Resets in 2…' 2196,1493 40x40", report);
+        Assert.Contains("url https://claude.ai/epitaxy/new?from=local_8804b5b6…]", report);
+    }
+
+    [Fact]
+    public void Report_is_null_with_an_anchor_a_shown_session_no_composer_or_Claude_not_in_front()
+    {
+        List<ChipElement> composer = NewSessionComposer();
+        List<ChipElement> session = RenamedComposer();
+        session[session.Count - 1] = Document("Some title - Claude Code", SessionUrl);
+        var settings = new List<ChipElement> { Document(string.Empty, ShellUrl), Document("Settings - Claude", "https://claude.ai/settings"), Button("Save", new Rectangle(100, 100, 80, 40)) };
+        List<ChipElement> undrawnModelChip = RenamedComposer();
+        undrawnModelChip[5] = new ChipElement("Model: Fable 5.1", ChipElementKind.Button, new Rectangle(2005, 1493, 103, 40), true);
+
+        Assert.Null(ChipRowLocator.Report(composer, ChipRowLocator.FindAnchor(composer)));
+        Assert.Null(ChipRowLocator.Report(session, null));
+        Assert.Null(ChipRowLocator.Report(settings, null));
+        Assert.Null(ChipRowLocator.Report(undrawnModelChip, null));
+        Assert.Null(ChipRowLocator.Report(Array.Empty<ChipElement>(), null));
+    }
+
+    [Fact]
+    public void Report_and_AppVersion_null_throw_ArgumentNullException()
+    {
+        Assert.Throws<ArgumentNullException>(() => ChipRowLocator.Report(null!, null));
+        Assert.Throws<ArgumentNullException>(() => ChipRowLocator.AppVersion(null!));
+    }
 }

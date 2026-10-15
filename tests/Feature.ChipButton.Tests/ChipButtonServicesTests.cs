@@ -13,12 +13,16 @@ namespace Feature.ChipButton.Tests;
 /// </summary>
 public sealed class ChipButtonServicesTests
 {
+    private static ChipButtonOptions Options() => new() { DiagnosticsFile = null };
+
     [Fact]
-    public void AddChipButton_null_services_throws_ArgumentNullException()
+    public void AddChipButton_null_arguments_throw_ArgumentNullException()
     {
-        ArgumentNullException ex = Assert.Throws<ArgumentNullException>(() => ChipButtonServices.AddChipButton(null!));
+        ArgumentNullException ex = Assert.Throws<ArgumentNullException>(() => ChipButtonServices.AddChipButton(null!, Options()));
 
         Assert.Equal("services", ex.ParamName);
+        Assert.Throws<ArgumentNullException>(() => new ServiceCollection().AddChipButton(null!));
+        Assert.Throws<ArgumentNullException>(() => new ChipButtonForm(null!));
     }
 
     [Fact]
@@ -26,13 +30,13 @@ public sealed class ChipButtonServicesTests
     {
         IServiceCollection services = new ServiceCollection();
 
-        Assert.Same(services, services.AddChipButton());
+        Assert.Same(services, services.AddChipButton(Options()));
     }
 
     [Fact]
     public void AddChipButton_registers_ChipButtonForm_as_transient_by_its_own_type()
     {
-        IServiceCollection services = new ServiceCollection().AddChipButton();
+        IServiceCollection services = new ServiceCollection().AddChipButton(Options());
 
         ServiceDescriptor descriptor = Assert.Single(services, d => d.ServiceType == typeof(ChipButtonForm));
         Assert.Equal(ServiceLifetime.Transient, descriptor.Lifetime);
@@ -48,24 +52,27 @@ public sealed class ChipButtonServicesTests
         services.AddSingleton<IFormatProvider>(CultureInfo.InvariantCulture);
         ServiceDescriptor existing = services.Single();
 
-        services.AddChipButton();
+        services.AddChipButton(Options());
 
         Assert.Contains(existing, services);
     }
 
     [Fact]
-    public void AddChipButton_adds_only_the_window_registration()
+    public void AddChipButton_adds_the_options_and_the_window_registrations_only()
     {
-        IServiceCollection services = new ServiceCollection().AddChipButton();
+        ChipButtonOptions options = Options();
+        IServiceCollection services = new ServiceCollection().AddChipButton(options);
 
-        ServiceDescriptor only = Assert.Single(services);
-        Assert.Equal(typeof(ChipButtonForm), only.ServiceType);
+        Assert.Equal(2, services.Count);
+        ServiceDescriptor registered = Assert.Single(services, d => d.ServiceType == typeof(ChipButtonOptions));
+        Assert.Equal(ServiceLifetime.Singleton, registered.Lifetime);
+        Assert.Same(options, registered.ImplementationInstance);
     }
 
     [Fact]
     public void AddChipButton_window_resolves_twice_as_distinct_hidden_instances()
     {
-        using ServiceProvider provider = new ServiceCollection().AddChipButton().BuildServiceProvider();
+        using ServiceProvider provider = new ServiceCollection().AddChipButton(Options()).BuildServiceProvider();
 
         ChipButtonForm first = provider.GetRequiredService<ChipButtonForm>();
         ChipButtonForm second = provider.GetRequiredService<ChipButtonForm>();

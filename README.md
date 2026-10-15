@@ -37,15 +37,30 @@ Two parts make it:
 
 - **The mod** (`mods/context-bar`, a Claude Code plugin) runs inside each session and writes
   the engine's own context figures, after every model response, to
-  `~\.claude\context-bar\<session id>.json`. It draws nothing in the app unless asked
-  (`/ctxbar footer` or `/ctxbar top` draw a fallback there; `/ctxbar overlay` is the default;
-  `/ctxbar off` hides the line, in the app and in the overlay; `/ctxbar` prints the figures).
+  `~\.claude\context-bar\<session>.json`: the file is named by the desktop app's id of the
+  session (`local_<uuid>`, from `CLAUDE_CODE_HOST_SESSION_ID`; the engine's own session id in a
+  session the desktop did not start), and carries both ids. `/clear`, `/resume` and `/branch`
+  move the engine to a new session id; the mod follows (the file keeps its name) and reads its
+  saved placement and visibility again, which those commands reset. It draws nothing in the
+  app unless asked (`/ctxbar footer` or `/ctxbar top` draw a fallback there; `/ctxbar overlay`
+  is the default; `/ctxbar off` hides the line, in the app and in the overlay; `/ctxbar` prints
+  the figures, the session's ids and the file it writes).
 - **The overlay** (`src/Feature.ContextBar`, part of `ClaudeCodePlus.exe --button`) finds the
-  footer's chips through UI Automation, tells which session the app shows from the app's page
-  title ("<session title> - Claude Code") matched against the desktop session store (the
-  newest `lastFocusedAt` among namesakes, or of all sessions when the title matches none),
-  reads that session's figures file and draws the line in a click-through, always-on-top
-  layered window. Read-only towards the app, like the button.
+  footer's chips through UI Automation, tells which session the app shows from the page's URL
+  (the session page's UI Automation document has the value
+  `https://claude.ai/epitaxy/local_<uuid>`: the same id the mod names its file by), reads that
+  session's figures file and draws the line in a click-through, always-on-top layered window.
+  No page title, no session store, and never another session's figures. Read-only towards the
+  app, like the button.
+
+What the line shows for the session in front:
+
+- **Nothing** while that session has no figures file: it is starting (the mod publishes after
+  its first reading), the mod does not run in it (see below), or the page is not a local
+  session's.
+- **"— — / 1M"** once the mod has published and the session has no reading yet: a fresh
+  session before its first response, or one just compacted.
+- **The figures** after that.
 
 Install the mod once for every session, from a terminal (not from a Claude Code session inside
 the desktop app, where `/plugin` is not available):
@@ -57,6 +72,25 @@ claude plugin install context-bar@claude-code-plus
 
 A session that has the mod loaded publishes its figures; one without it shows no line.
 
+**Line missing in a session.** Type `/ctxbar` in that session. "Unknown command" means the mod
+is not loaded there: the session started before the mod was installed or enabled (a running
+session keeps the plugin set it loaded at start; on app build 2.37337.1 the desktop reloaded
+the plugins of its idle sessions by itself when the mod was updated, 2026-10-15, but not of the
+busy ones). Type `/reload-plugins` in the session's own prompt box, which loads it without a
+restart (refused when typed over Remote Control), or start a new session. When `/ctxbar` answers, its second line names the file the mod writes; the
+overlay reads `~\.claude\context-bar\<local_ id>.json` for the session in front and notes a
+missing one in the diagnostics file.
+
+**Diagnostics.** When a Claude window is in front and the button or the line cannot find its
+place (a composer without the chip-row anchor, a session without a footer slot, a footer
+without a session URL on the page, a shown session without a figures file), one line per
+change, once the state has held for about five seconds, goes to
+`%LOCALAPPDATA%\ClaudeCodePlus\diagnostics.log`: the app version, the page documents' URLs
+(session ids cut short) and the names and bounds of the buttons on the row in question.
+`tools\Capture-Documents.cmd`, started with `explorer.exe`, is a read-only 25-second capture of
+the same page documents and of the newest session record, for a bug report (it prints no
+titles, and ids cut short).
+
 ## Requirements
 Windows 10/11, the Claude desktop app, and the .NET 10 SDK (`global.json`) to build. The
 published app needs the .NET 10 Desktop Runtime.
@@ -65,6 +99,13 @@ published app needs the .NET 10 Desktop Runtime.
 ```
 dotnet build ClaudeCodePlus.slnx
 dotnet test ClaudeCodePlus.slnx
+```
+
+The mod's tests run against the engine itself:
+
+```
+claude plugin validate mods\context-bar
+claude plugin test mods\context-bar
 ```
 
 ## Install
@@ -88,8 +129,8 @@ redirects `%APPDATA%` writes into a private store, so the shortcut would not rea
 ## Layout
 | Project | Role |
 |---|---|
-| `src/Feature.ChipButton` | the button: placement by UI Automation, the always-on-top window |
-| `src/Feature.ContextBar` | the context line: footer placement by UI Automation, the shown session, the figures file, the layered window |
+| `src/Feature.ChipButton` | the button: placement by UI Automation, the always-on-top window, its diagnostics |
+| `src/Feature.ContextBar` | the context line: footer placement and the shown session's id by UI Automation, the figures file, the layered window, its diagnostics |
 | `mods/context-bar` | the Claude Code mod that publishes each session's context figures |
 | `src/Feature.Picker` | the list window: search, Up/Down, Enter / double-click opens |
 | `src/Feature.Catalog` | reads the project folders from Claude's local data, merged and ranked |
@@ -97,10 +138,13 @@ redirects `%APPDATA%` writes into a private store, so the shortcut would not rea
 | `src/Core.Infrastructure` | composition (DI) and the two run modes |
 | `src/App.Host` | the exe (`ClaudeCodePlus.exe`) |
 | `tests/*` | xUnit suites per module, cross-module flows, dependency rules |
+| `tools/` | the installer, its check, and the read-only page-document capture |
 
 ## Caveat
 The button depends on the app's accessible names: "Environment: …" (checked on Claude desktop
 2.37337.1, 2026-10-14) and, for the older layout, "Add another folder" and "worktree" (checked
 on 2.26454.2). If an app update renames them, the button stops appearing until
-`ChipRowLocator`'s constants are updated. The context line depends on the footer's "Model: …"
-chip (checked on 2.37337.1, 2026-10-15) the same way, see `FooterLocator`.
+`ChipRowLocator`'s constants are updated; the diagnostics file then says what the app showed
+instead. The context line depends on the footer's "Model: …" chip and on the session page's
+URL route `https://claude.ai/epitaxy/local_<uuid>` (both checked on 2.37337.1, 2026-10-15) the
+same way, see `FooterLocator`.

@@ -3,12 +3,19 @@
 //
 // The engine's own status-line figures ($.session.usage(): the input side of
 // the last response against the model's window) are written after every
-// change to <CLAUDE_CONFIG_DIR or ~/.claude>/context-bar/<session id>.json,
+// change to <CLAUDE_CONFIG_DIR or ~/.claude>/context-bar/<session>.json,
 // where the Claude Code Plus overlay (ClaudeCodePlus.exe --button) reads them
 // and draws a thin gradient line in the app's prompt footer, between the
-// permission-mode chip and the model chip. The figures move after each model
-// response of a turn (turn.step), at every measurement the engine pushes
-// (session.measure) and when a turn ends.
+// permission-mode chip and the model chip. The file is named by the desktop
+// app's id of the session (CLAUDE_CODE_HOST_SESSION_ID, local_<uuid>: the id
+// the app's page URL carries, so the overlay reads the shown session's own
+// figures and nobody else's), or by the engine's session id in a session the
+// desktop did not start; both ids are inside the file. The figures move after
+// each model response of a turn (turn.step), at every measurement the engine
+// pushes (session.measure) and when a turn ends. /clear, /resume and /branch
+// move the engine to a new session id without a new session.start and reset
+// $.state: classic.SessionStart tells, the session is learned again (the file
+// keeps its name) and the saved placement and visibility are read again.
 //
 // In-app drawing is optional, for a session without the overlay: `/ctxbar
 // footer` draws the line in the prompt footer's mode-label slot (desktop: an
@@ -18,12 +25,12 @@
 // row of ━ cells), `/ctxbar overlay` (the default) nothing in the app.
 // `/ctxbar off` hides it, in the app and in the overlay, and `/ctxbar on`
 // shows it again. Placement and visibility are kept across sessions in
-// $.store. `/ctxbar` alone prints the figures.
+// $.store. `/ctxbar` alone prints the figures, the session's ids and the file.
 
 import { atom, read, update } from 'claude-code'
 import type { Elements, EngineInterface, Register, SessionContextUsage } from 'claude-code'
 
-import type { ContextReading, Placement } from '../types'
+import type { ContextReading, Placement, PublishedFigures } from '../types'
 
 const reading = atom({ plugin: 'context-bar', key: 'reading' } as const, null)
 const isHidden = atom({ plugin: 'context-bar', key: 'isHidden' } as const, false)
@@ -74,18 +81,19 @@ export const fmtTokens = (n: number): string => {
   return `${(n / 1000000).toFixed(2).replace(/\.?0+$/, '')}M`
 }
 
-/** The figures file: `<configDir>\context-bar\<session id>.json`. */
-export const figuresPath = (configDir: string, sessionId: string): string =>
-  `${configDir.replace(/[\\/]+$/, '')}\\context-bar\\${sessionId}.json`
+/** The figures file: `<configDir>\context-bar\<name>.json`, the name being the host session id, else the engine's session id. */
+export const figuresPath = (configDir: string, name: string): string =>
+  `${configDir.replace(/[\\/]+$/, '')}\\context-bar\\${name}.json`
 
 /** The figures file's text: what the Claude Code Plus footer line reads. */
 export const figuresJson = (
-  session: { id: string; cwd: string; model: string },
+  session: { id: string; hostId: string | null; cwd: string; model: string },
   r: ContextReading,
   hidden: boolean,
-): string =>
-  JSON.stringify({
+): string => {
+  const figures: PublishedFigures = {
     sessionId: session.id,
+    hostSessionId: session.hostId,
     cwd: session.cwd,
     model: session.model,
     tokens: r.tokens,
@@ -94,7 +102,13 @@ export const figuresJson = (
     threshold: r.threshold,
     at: r.at,
     isHidden: hidden,
-  })
+  }
+  return JSON.stringify(figures)
+}
+
+/** One line naming the session's ids and its file, for /ctxbar. */
+export const describeSession = (s: { id: string; hostId: string | null; file: string } | null): string =>
+  s === null ? 'context-bar: session not learned yet.' : `context-bar: session ${s.id}, desktop ${s.hostId ?? 'none'}, file ${s.file}`
 
 /**
  * The band's desktop line: a 2.5px rounded gradient line over `fraction` of
@@ -141,9 +155,12 @@ export const describeReading = (r: ContextReading): string => {
 
 // ---------- the figures ----------
 
-type SessionFacts = { id: string; cwd: string; model: string; file: string }
+type SessionFacts = { id: string; hostId: string | null; cwd: string; model: string; file: string }
 
-/** The session's facts, read once per load in session.start (a hot reload runs it again). */
+/**
+ * The session's facts, read in session.start (a hot reload runs it again) and
+ * again after /clear, /resume or /branch, when the engine's id changes.
+ */
 let session: SessionFacts | null = null
 
 const toReading = (context: SessionContextUsage, old: ContextReading | null, at: number): ContextReading => ({
@@ -156,11 +173,17 @@ const toReading = (context: SessionContextUsage, old: ContextReading | null, at:
 
 async function learnSession($: EngineInterface): Promise<void> {
   try {
-    const [id, cwd, model] = await Promise.all([$.session.id(), $.session.cwd(), $.session.model()])
+    const [id, cwd, model, host] = await Promise.all([
+      $.session.id(),
+      $.session.cwd(),
+      $.session.model(),
+      $.env.get('CLAUDE_CODE_HOST_SESSION_ID'),
+    ])
     const configDir =
       (await $.env.get('CLAUDE_CONFIG_DIR')) ||
       `${(await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? ''}\\.claude`
-    session = { id, cwd, model, file: figuresPath(configDir, id) }
+    const hostId = host ? host : null
+    session = { id, hostId, cwd, model, file: figuresPath(configDir, hostId ?? id) }
   } catch {
     session = null
   }
@@ -168,6 +191,10 @@ async function learnSession($: EngineInterface): Promise<void> {
 
 /** Writes the figures file for the overlay; a write that fails is left for the next change. */
 async function publish($: EngineInterface): Promise<void> {
+  if (session === null) return
+  // After /clear, /resume or /branch the engine goes on under a new id: a changed one is learned again first.
+  const id = await $.session.id().catch(() => null)
+  if (id !== null && id !== session.id) await learnSession($)
   if (session === null) return
   const r = await read($, reading)
   if (r === null) return
@@ -279,6 +306,15 @@ const PLACEMENTS: readonly Placement[] = ['overlay', 'footer', 'top']
 /** The placement before any /ctxbar: nothing in the app, the overlay draws the line. */
 const DEFAULT_PLACEMENT: Placement = 'overlay'
 
+/** Reads the saved visibility and placement into the session's state (which /clear, /resume and /branch reset). */
+async function loadPreferences($: EngineInterface): Promise<void> {
+  const hidden = (await $.store.get('isHidden')) === true
+  await update($, isHidden, () => hidden)
+  const stored = await $.store.get('placement')
+  const where = PLACEMENTS.find(p => p === stored) ?? DEFAULT_PLACEMENT
+  await update($, placement, () => where)
+}
+
 /** The reading to draw at the site placement `at` owns, or null for nothing. */
 async function drawable($: EngineInterface, at: Placement): Promise<BarParts | null> {
   if ((await read($, isHidden)) || (await read($, placement)) !== at) return null
@@ -295,15 +331,26 @@ export const register: Register = on => {
     })
     // An earlier build pinned a status line under the prompt; a reload does not clear it.
     $.ui.status(undefined)
-    const hidden = (await $.store.get('isHidden')) === true
-    await update($, isHidden, () => hidden)
-    const stored = await $.store.get('placement')
-    const where = PLACEMENTS.find(p => p === stored) ?? DEFAULT_PLACEMENT
-    await update($, placement, () => where)
+    await loadPreferences($)
     const result = await next(e)
     void learnSession($).then(() => refresh($, true))
 
     return result
+  })
+
+  // /clear, /resume and /branch: the engine goes on under a new session id,
+  // $.state is reset and session.start does not fire again; this does (a
+  // compaction keeps the id and the state, and is left out).
+  on('classic.SessionStart', { source: ['clear', 'resume', 'fork'] }, async ($, e, next) => {
+    try {
+      await loadPreferences($)
+      await learnSession($)
+      void refresh($, true)
+    } catch {
+      // the next publish learns the session again; the preferences keep their defaults
+    }
+
+    return next(e)
   })
 
   // The engine's own push: after each main-thread turn.
@@ -356,7 +403,7 @@ export const register: Register = on => {
     await refresh($, true)
     const r = await read($, reading)
 
-    return { text: r === null ? 'context-bar: no reading yet.' : describeReading(r) }
+    return { text: `${r === null ? 'context-bar: no reading yet.' : describeReading(r)}\n${describeSession(session)}` }
   })
 
   // The prompt footer's mode-label slot, under `/ctxbar footer`: on the desktop

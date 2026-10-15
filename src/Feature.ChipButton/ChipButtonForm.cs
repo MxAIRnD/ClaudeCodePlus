@@ -12,9 +12,11 @@ namespace Feature.ChipButton;
 /// chip row of the Claude app's new-session composer (see <see cref="ChipRowLocator"/>). Once
 /// <see cref="StartWatching"/> is called it polls the foreground window every 400 ms: shown at
 /// the row while a Claude window with the row is in front, hidden otherwise, and hidden when
-/// it would cover one of the app's own buttons. It never takes the focus. A left click raises
-/// <see cref="Pressed"/>; its context menu offers the same and "Exit", which raises
-/// <see cref="ExitRequested"/>. It does not change the Claude app.
+/// it would cover one of the app's own buttons. While a Claude window with a composer is in
+/// front and no anchor is found, what is seen goes to the diagnostics file
+/// (<see cref="ChipButtonOptions.DiagnosticsFile"/>), once per change. It never takes the focus.
+/// A left click raises <see cref="Pressed"/>; its context menu offers the same and "Exit", which
+/// raises <see cref="ExitRequested"/>. It does not change the Claude app.
 /// </summary>
 public sealed class ChipButtonForm : Form
 {
@@ -30,13 +32,17 @@ public sealed class ChipButtonForm : Form
     private static readonly Color Ink = Color.FromArgb(40, 39, 37);
 
     private readonly Timer _timer;
+    private readonly DiagnosticsLog _log;
     private Font? _font;
     private bool _probing;
     private bool _hover;
 
-    /// <summary>Creates the button, hidden and not yet watching.</summary>
-    public ChipButtonForm()
+    /// <summary>Creates the button, hidden and not yet watching. Throws <see cref="ArgumentNullException"/> for null.</summary>
+    public ChipButtonForm(ChipButtonOptions options)
     {
+        ArgumentNullException.ThrowIfNull(options);
+        _log = new DiagnosticsLog(options.DiagnosticsFile);
+
         Text = "Claude Code Plus — button";
         FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = false;
@@ -156,6 +162,7 @@ public sealed class ChipButtonForm : Form
             }
 
             Rectangle? anchor = ChipRowLocator.FindAnchor(elements);
+            _log.Note(ChipRowLocator.Report(elements, anchor));
             Rectangle bounds = anchor is null ? Rectangle.Empty : BoundsAfter(anchor.Value);
             if (anchor is null || ChipRowLocator.Collides(bounds, anchor.Value, elements))
             {

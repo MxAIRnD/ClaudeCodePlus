@@ -13,10 +13,14 @@ namespace Feature.ContextBar;
 /// layered window (per-pixel alpha: only the line and the figures show) placed between the
 /// permission-mode chip and the model chip of a running session (see <see cref="FooterLocator"/>).
 /// Once <see cref="StartWatching"/> is called it polls the foreground window every 400 ms: shown
-/// with the figures of the session the app shows (<see cref="FocusedSessionFinder"/>; the
-/// figures from <see cref="ContextBarOptions.FiguresRoot"/>) while a Claude window with such a
-/// row is in front and that session has published figures that are not hidden; hidden
-/// otherwise. It never takes the focus or a click, and it does not change the Claude app.
+/// with the figures of the session the app shows (its id read from the page's URL by
+/// <see cref="FooterLocator.ShownSessionId"/>, its figures from that session's own file under
+/// <see cref="ContextBarOptions.FiguresRoot"/>, see <see cref="ReadFigures"/>) while a Claude
+/// window with such a row is in front and that session has published figures that are not
+/// hidden; hidden otherwise, never with another session's figures. While a Claude window is in
+/// front and the line cannot be drawn, what is missing goes to the diagnostics file
+/// (<see cref="ContextBarOptions.DiagnosticsFile"/>), once per change. It never takes the focus
+/// or a click, and it does not change the Claude app.
 /// </summary>
 public sealed class ContextBarForm : Form
 {
@@ -27,19 +31,18 @@ public sealed class ContextBarForm : Form
     private const int WsExTransparent = 0x00000020;
 
     private readonly Timer _timer;
-    private readonly FocusedSessionFinder _finder;
+    private readonly DiagnosticsLog _log;
     private readonly string? _figuresRoot;
     private bool _probing;
     private Rectangle _slot;
     private ContextFigures? _figures;
 
     /// <summary>Creates the window, hidden and not yet watching. Throws <see cref="ArgumentNullException"/> for null.</summary>
-    public ContextBarForm(ContextBarOptions options, FocusedSessionFinder finder)
+    public ContextBarForm(ContextBarOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(finder);
-        _finder = finder;
         _figuresRoot = options.FiguresRoot;
+        _log = new DiagnosticsLog(options.DiagnosticsFile);
 
         Text = "Claude Code Plus — context line";
         FormBorderStyle = FormBorderStyle.None;
@@ -64,6 +67,17 @@ public sealed class ContextBarForm : Form
             return cp;
         }
     }
+
+    /// <summary>
+    /// The figures the session <paramref name="sessionId"/> (as <see cref="FooterLocator.ShownSessionId"/>
+    /// answers it) has published under <paramref name="figuresRoot"/>: the file
+    /// <c>&lt;figuresRoot&gt;\&lt;sessionId&gt;.json</c>, read by <see cref="FiguresFile.TryRead"/>.
+    /// Null when either is null (no session shown, or nowhere to read), or when the file is
+    /// missing, unreadable or not a figures file (the mod has not published for that session).
+    /// Never another session's figures.
+    /// </summary>
+    public static ContextFigures? ReadFigures(string? figuresRoot, string? sessionId) =>
+        figuresRoot is null || sessionId is null ? null : FiguresFile.TryRead(Path.Combine(figuresRoot, sessionId + ".json"));
 
     /// <summary>Starts polling the foreground window; call once, on the UI thread.</summary>
     public void StartWatching() => _timer.Start();
@@ -96,7 +110,9 @@ public sealed class ContextBarForm : Form
             }
 
             Rectangle? slot = FooterLocator.FindSlot(elements);
-            ContextFigures? figures = slot is null ? null : ReadFigures(FooterLocator.ShownSessionTitle(elements));
+            string? sessionId = FooterLocator.ShownSessionId(elements);
+            ContextFigures? figures = slot is null ? null : ReadFigures(_figuresRoot, sessionId);
+            _log.Note(FooterLocator.Report(elements, slot, sessionId, figures is not null));
             if (slot is null || figures is null || figures.IsHidden)
             {
                 if (Visible)
@@ -123,12 +139,6 @@ public sealed class ContextBarForm : Form
         {
             _probing = false;
         }
-    }
-
-    private ContextFigures? ReadFigures(string? shownTitle)
-    {
-        string? id = _finder.Find(shownTitle);
-        return id is null || _figuresRoot is null ? null : FiguresFile.TryRead(Path.Combine(_figuresRoot, id + ".json"));
     }
 
     private void PaintSlot(Rectangle slot, ContextFigures figures)
