@@ -92,14 +92,22 @@ the same page documents and of the newest session record, for a bug report (it p
 titles, and ids cut short).
 
 ## Requirements
-Windows 10/11, the Claude desktop app, and the .NET 10 SDK (`global.json`) to build. The
-published app needs the .NET 10 Desktop Runtime.
+Windows 10/11, the Claude desktop app, and any .NET SDK from 8 up to build: `global.json`
+accepts 8.0.100 or newer and takes the newest SDK installed, and the language is pinned to C# 12
+so every SDK compiles the same code. The published app runs on the .NET Desktop Runtime 8 or any
+newer one: it targets .NET 8 and rolls forward to 9 or 10 when 8 is absent (`RollForward` in
+`src\Directory.Build.props`).
 
 ## Build and test
 ```
 dotnet build ClaudeCodePlus.slnx
 dotnet test ClaudeCodePlus.slnx
 ```
+
+`ClaudeCodePlus.sln` is the same solution in the classic format, for an SDK older than 9.0.200
+(which cannot read `.slnx`): `dotnet build ClaudeCodePlus.sln`. Name the file in every `dotnet`
+command, since both sit in the root. The installer publishes the project file directly and works
+with either SDK.
 
 The mod's tests run against the engine itself:
 

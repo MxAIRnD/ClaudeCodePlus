@@ -5,13 +5,17 @@
        Every public member needs a /// doc-comment or the build fails (CS1591 as error): with no
        Core.Contracts project, a module's public surface IS its contract, so the behavioral
        notes are compiler-forced here (no separate contracts project). -->
+  <!-- .NET 8 is the floor, not a pin: the exe asks for the Desktop Runtime 8 and rolls forward to
+       the next newer one installed when 8 is absent (RollForward Major), and the language is pinned
+       so any SDK from 8 up compiles the same code (global.json accepts them all). -->
   <PropertyGroup>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <RollForward>Major</RollForward>
     <RootNamespace>$(MSBuildProjectName)</RootNamespace>
     <AssemblyName>$(MSBuildProjectName)</AssemblyName>
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
-    <LangVersion>latest</LangVersion>
+    <LangVersion>12</LangVersion>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <WarningsAsErrors>$(WarningsAsErrors);CS1591</WarningsAsErrors>

@@ -2,12 +2,14 @@
 
   <!-- Test modules. Test knowledge lives only
        on this side; nothing under src/ refers to anything under tests/. -->
+  <!-- Same floor as src: .NET 8, rolling forward to a newer runtime when 8 is absent, C# 12. -->
   <PropertyGroup>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <RollForward>Major</RollForward>
     <RootNamespace>$(MSBuildProjectName)</RootNamespace>
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
-    <LangVersion>latest</LangVersion>
+    <LangVersion>12</LangVersion>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
